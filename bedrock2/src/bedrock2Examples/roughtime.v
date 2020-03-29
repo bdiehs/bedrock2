@@ -39,11 +39,6 @@ Section WithParameters.
   Context {word32 : Word.Interface.word 32}.
   Local Notation bytes4 := (array (T := word32) scalar32 (word.of_Z 4)).
 
-  Lemma addToBuffer_ok : program_logic_goal_for_function! addToBuffer.
-  Proof.
-    repeat straightline.
-  Abort.
-
   (*TODO*)
   Definition val : list (string * (list byte)) :=
     [("SREP", List.repeat (Init.Byte.x42) 64);
