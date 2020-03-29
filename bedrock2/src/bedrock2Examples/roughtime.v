@@ -13,30 +13,21 @@ Local Coercion var (x : string) : Syntax.expr := Syntax.expr.var x.
 Local Definition bedrock_func : Type := String.string * (list String.string * list String.string * cmd).
 Local Coercion name_of_func (f : bedrock_func) := fst f.
 
-Definition addToBuffer : bedrock_func :=
-  let buffer := "buffer" in
-  let x := "x" in
-  let start := "start" in
-  let num_bytes := "num_bytes" in
-  let i := "i" in
-  ("addToBuffer", ([buffer; x; start; num_bytes], []:list String.string, bedrock_func_body:(
-  i = (constr:(1));
-  while (i < num_bytes) {{
-    store(buffer + start, x >> (i << constr:(3)) & constr:(Ox"FF"));
-    i = (i + constr:(1))
-  }}
-))).
-
 Definition createTimestampMessage :=
   let buffer := "buffer" in
   ("createTimestampMessage", ([buffer], []:list String.string, bedrock_func_body:(
-  addToBuffer(buffer, constr:(5), constr:(0), constr:(4))
+    store4(buffer, constr:(5));
+    store4(buffer + constr:(4), constr:(Ox"40"));
+    store4(buffer + constr:(8), constr:(Ox"40"));
+    store4(buffer + constr:(12), constr:(Ox"a4"));
+    store4(buffer + constr:(16), constr:(Ox"13c"));
   (*TODO*)
 ))).
 
 Require bedrock2.WeakestPrecondition.
 Require Import bedrock2.Semantics bedrock2.FE310CSemantics.
-Require Import coqutil.Map.Interface bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
+Require Import coqutil.Map.Interface coqutil.Word.LittleEndian coqutil.Word.Interface.
+Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
 
 Require bedrock2.WeakestPreconditionProperties.
 From coqutil.Tactics Require Import letexists eabstract.
@@ -45,21 +36,44 @@ Require Import bedrock2.ProgramLogic bedrock2.Scalars.
 
 Section WithParameters.
   Context {p : FE310CSemantics.parameters}.
-
-  Instance spec_of_addToBuffer : spec_of "addToBuffer" := fun functions =>
-    forall p_addr (buf:list byte) x start num_bytes R m t,
-      WeakestPrecondition.call (p:=@semantics_parameters p) functions "addToBuffer" t m [p_addr; x; start; num_bytes]
-      (fun t' m' rets => t=t' /\ (sep (scalar p_addr x) R) m /\ rets = nil) .
-
+  Context {word32 : Word.Interface.word 32}.
+  Local Notation bytes4 := (array (T := word32) scalar32 (word.of_Z 4)).
 
   Lemma addToBuffer_ok : program_logic_goal_for_function! addToBuffer.
   Proof.
     repeat straightline.
   Abort.
 
-  (* TODO
-  Instance spec_of_createTimestampMessage := fun functions =>
-      forall p_addr (buf:list byte) R m t,
-        WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr] (fun t' m' rets =>
-  )
-  *)
+  (*TODO*)
+  Definition val : list (string * (list byte)) :=
+    [("SREP", List.repeat (Init.Byte.x42) 64);
+    ("SIG", List.repeat (Init.Byte.x42) 64);
+    ("INDX", List.repeat (Init.Byte.x42) 64);
+    ("PATH", List.repeat (Init.Byte.x42) 64);
+    ("CERT", List.repeat (Init.Byte.x42) 64)].
+
+  Definition tag_to_word32 : String.string -> word32.
+  Admitted.
+
+  Definition word32_of_nat : nat -> word32.
+  Admitted.
+  
+  Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
+    forall p_addr buf R m t,
+      (sep (bytes4 p_addr buf) R) m ->
+      List.length buf = 1024%nat ->
+      WeakestPrecondition.call (p:=@semantics_parameters p) functions "createTimestampMessage" t m [p_addr] (fun t' m' rets => t = t' /\ sep (scalar32 p_addr (word32_of_nat (List.length val))) (sep (bytes4 (word.add p_addr (word.of_Z 4)) (List.map (fun t => tag_to_word32 (fst t)) val)) R(*TODO*)) m').
+
+  Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
+  Proof.
+    repeat straightline.
+    eapply store_four_of_sep. 1: admit.
+    repeat straightline.
+    eapply store_four_of_sep. 1: admit.
+    repeat straightline.
+    eapply store_four_of_sep. 1: admit.
+    repeat straightline.
+    split; auto.
+    repeat straightline.
+   Abort.
+
