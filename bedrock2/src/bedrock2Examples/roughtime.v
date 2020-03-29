@@ -20,7 +20,7 @@ Definition createTimestampMessage :=
     store4(buffer + constr:(4), constr:(Ox"40"));
     store4(buffer + constr:(8), constr:(Ox"40"));
     store4(buffer + constr:(12), constr:(Ox"a4"));
-    store4(buffer + constr:(16), constr:(Ox"13c"));
+    store4(buffer + constr:(16), constr:(Ox"13c"))
   (*TODO*)
 ))).
 
