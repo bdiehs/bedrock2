@@ -39,7 +39,7 @@ Section WithParameters.
   Context {word32 : Word.Interface.word 32}.
   Local Notation bytes4 := (array (T := word32) scalar32 (word.of_Z 4)).
 
-  (*TODO*)
+  (*TODO: fix this*)
   Definition val : list (string * (list byte)) :=
     [("SREP", List.repeat (Init.Byte.x42) 64);
     ("SIG", List.repeat (Init.Byte.x42) 64);
@@ -52,23 +52,23 @@ Section WithParameters.
 
   Definition word32_of_nat : nat -> word32.
   Admitted.
-  
+
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
-    forall p_addr buf R m t,
-      (sep (bytes4 p_addr buf) R) m ->
-      List.length buf = 1024%nat ->
-      WeakestPrecondition.call (p:=@semantics_parameters p) functions "createTimestampMessage" t m [p_addr] (fun t' m' rets => t = t' /\ sep (scalar32 p_addr (word32_of_nat (List.length val))) (sep (bytes4 (word.add p_addr (word.of_Z 4)) (List.map (fun t => tag_to_word32 (fst t)) val)) R(*TODO*)) m').
+    forall p_addr R m t,
+      WeakestPrecondition.call (p:=@semantics_parameters p) functions "createTimestampMessage" t m [p_addr] (fun t' m' rets => t = t' /\ exists offsets, sep (scalar32 p_addr (word32_of_nat (List.length val))) (sep (bytes4 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word32_of_nat t) offsets)) R) m').
 
   Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
   Proof.
     repeat straightline.
-    eapply store_four_of_sep. 1: admit.
+    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
     repeat straightline.
-    eapply store_four_of_sep. 1: admit.
+    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
     repeat straightline.
-    eapply store_four_of_sep. 1: admit.
+    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
     repeat straightline.
     split; auto.
     repeat straightline.
+    exists [64%nat; 64%nat; 164%nat; 316%nat].
+
    Abort.
 
