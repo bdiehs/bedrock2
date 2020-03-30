@@ -32,12 +32,12 @@ Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
 Require bedrock2.WeakestPreconditionProperties.
 From coqutil.Tactics Require Import letexists eabstract.
 Require Import bedrock2.ProgramLogic bedrock2.Scalars.
+Require Import coqutil.Z.Lia.
 
 
 Section WithParameters.
   Context {p : FE310CSemantics.parameters}.
-  Context {word32 : Word.Interface.word 32}.
-  Local Notation bytes4 := (array (T := word32) scalar32 (word.of_Z 4)).
+  Local Notation bytes4 := (array scalar32 (word.of_Z 4)).
 
   (*TODO: fix this*)
   Definition val : list (string * (list byte)) :=
@@ -47,28 +47,88 @@ Section WithParameters.
     ("PATH", List.repeat (Init.Byte.x42) 64);
     ("CERT", List.repeat (Init.Byte.x42) 64)].
 
-  Definition tag_to_word32 : String.string -> word32.
+  Definition tag_to_word32 : String.string -> parameters.word.
   Admitted.
 
-  Definition word32_of_nat : nat -> word32.
-  Admitted.
-
+  Local Infix "*" := (sep).
+  Local Infix "*" := (sep) : type_scope. Local Infix "*" := sep.
+Check bytes4.
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
-    forall p_addr R m t,
-      WeakestPrecondition.call (p:=@semantics_parameters p) functions "createTimestampMessage" t m [p_addr] (fun t' m' rets => t = t' /\ exists offsets, sep (scalar32 p_addr (word32_of_nat (List.length val))) (sep (bytes4 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word32_of_nat t) offsets)) R) m').
+    forall p_addr buf R m t,
+      (sep (bytes4 p_addr buf) R) m ->
+      List.length buf = 5%nat (*TODO: there will actually be a num_bytes instead of this 5 later on*) ->
+      WeakestPrecondition.call (p:=@semantics_parameters p) functions "createTimestampMessage" t m [p_addr] (fun t' m' rets => t = t' /\ rets = nil /\ exists offsets, (scalar32 p_addr (word.of_Z (Z.of_nat (List.length val))) * bytes4 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) * R) m').
 
+
+  Require Import coqutil.Word.Properties.
+  Local Notation array := (array (mem:=mem) ptsto (word.of_Z 1)).
+
+(* This seemed necessary but on a second thought I don't think so
+  Lemma byte4array_address_inbounds xs start a
+    (Hmod : word.unsigned (word.sub a start) mod 4 = 0)
+    (Hlen : word.unsigned (word.sub a start) < 4 * Z.of_nat (List.length xs))
+    (i := Z.to_nat ((word.unsigned (word.sub a start) / 4)))
+    : Lift1Prop.iff1 (bytes4 start xs)
+      (bytes4 start (firstn i xs) * (
+        scalar32 a (hd (word.of_Z 0) (skipn i xs)) *
+        bytes4 (word.add a (word.of_Z 4)) (skipn (S i) xs) ) ).
+  Proof.
+    eapply array_address_inbounds; rewrite word.unsigned_of_Z; auto.
+  Qed.
+
+  Lemma byte4array_index_inbounds xs start iw
+    (Hmod : word.unsigned iw mod 4 = 0)
+    (Hlen : word.unsigned iw < 4 * Z.of_nat (List.length xs))
+    (i := Z.to_nat ((word.unsigned iw / 4)))
+    : Lift1Prop.iff1 (bytes4 start xs)
+      (bytes4 start (firstn i xs) * (
+        scalar32 (word.add start iw) (hd (word32_of_nat 0) (skipn i xs)) *
+        bytes4 (word.add (word.add start iw) (word.of_Z 4)) (skipn (S i) xs) ) ).
+  Proof.
+    rewrite (byte4array_address_inbounds xs start (word.add start iw));
+    replace (word.sub (word.add start iw) start) with iw; try (reflexivity || assumption).
+    all : rewrite word.word_sub_add_l_same_l; trivial.
+  Qed.
+*)
   Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
   Proof.
+    repeat straightline.    
+    do 5 (destruct buf; [inversion H0|]).
+    destruct buf; [| inversion H0].
+    eapply store_four_of_sep.
+    1: eapply Lift1Prop.subrelation_iff1_impl1. 2: apply H.
+    1: etransitivity. 1: apply sep_assoc. 1: ecancel.
     repeat straightline.
-    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
+    eapply store_four_of_sep.
+    1: eapply Lift1Prop.subrelation_iff1_impl1. 2: apply H2.
+    1: etransitivity. 2: ecancel. 1: replace (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)) with a0. 2: admit(*ring*). 1: ecancel.
     repeat straightline.
-    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
+    eapply store_four_of_sep.
+    1: eapply Lift1Prop.subrelation_iff1_impl1. 2: apply H3.
+    1: etransitivity. 2: ecancel. 1: replace (word.add a0 (word.of_Z 4)) with a1. 2: admit(*ring*). 1: ecancel.
     repeat straightline.
-    eapply store_four_of_sep with (oldvalue := word.of_Z 5). 1: admit.
+    eapply store_four_of_sep.
+    1: eapply Lift1Prop.subrelation_iff1_impl1. 2: apply H4.
+    1: etransitivity. 2: ecancel. 1: replace (word.add a1 (word.of_Z 4)) with a2. 2: admit(*ring*). 1: ecancel.
     repeat straightline.
-    split; auto.
-    repeat straightline.
-    exists [64%nat; 64%nat; 164%nat; 316%nat].
+    split; [auto|].
+    split; [auto|].
 
+    exists [64; 64; 164; 316].
+    eapply Lift1Prop.subrelation_iff1_impl1. 2: apply H5.
+    simpl. unfold v, v0, v1, v2, v3.
+    repeat (rewrite word.unsigned_of_Z).
+    unfold word.wrap.
+
+    repeat (rewrite Zmod_small; [|admit(*lia or omega*)]).
+
+    replace a with (word.add p_addr (word.of_Z 4)). 2: admit(*ring*).
+    replace a0 with (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)). 2: admit(*ring*).
+    replace a1 with (word.add (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4))
+                      (word.of_Z 4)). 2: admit(*ring*).
+    replace a2 with (word.add
+              (word.add (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4))
+                        (word.of_Z 4)) (word.of_Z 4)). 2: admit(*ring*).
+    try ecancel.
    Abort.
 
