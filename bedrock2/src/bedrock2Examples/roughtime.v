@@ -65,13 +65,13 @@ Section WithParameters.
         (preprocess [autorewrite with rew_word_morphism],
          morphism (Properties.word.ring_morph (word := Semantics.word)),
          constants [Properties.word_cst]).  
-  Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
+
+   Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
   Proof.
     repeat straightline.
     do 5 (destruct buf; [inversion H0|]).
     destruct buf; [| inversion H0].
     cbn[Array.array] in H.
-    Check spec_of_createTimestampMessage.
     repeat straightline.
     replace (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)) with
       (word.add p_addr (word.of_Z 8)) in *. 2: ring.
@@ -100,9 +100,8 @@ Section WithParameters.
     repeat (rewrite Zmod_small in H5; [|admit(*lia or omega*)]).
     cbn[val Datatypes.length Z.of_nat Pos.of_succ_nat Pos.succ].
     unfold a, a0, a1, a2 in H5.
-    
-    Set Printing Implicit.
-    simpl in *. ecancel_assumption.
+    simpl in *.
+    ecancel_assumption.
 Abort.
 (*    Check ( (scalar32 p_addr (word.of_Z (Z.of_nat (List.length val))))).
     simpl in *. ecancel_assumption.
