@@ -51,15 +51,14 @@ Section WithParameters.
   Local Infix "*" := (sep).
   Local Infix "*" := (sep) : type_scope. Local Infix "*" := sep.
   Check (array scalar32 (word.of_Z 4)).
-  Notation array32 := (array (width := @width (@semantics_parameters p))
-                             scalar32 (word.of_Z 4)).
+  Notation array32 := (array scalar32 (word.of_Z 4)).
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
     forall p_addr buf R m t,
       (sep ((array32) p_addr buf) R) m ->
       List.length buf = 5%nat ->
       WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
       (fun t' m' rets => t = t' /\ rets = nil /\
-         exists offsets, (scalar32 (width := @width (@semantics_parameters p)) p_addr (word.of_Z (Z.of_nat (List.length val))) * array32 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) * R) m').
+         exists offsets, (scalar32 p_addr (word.of_Z (Z.of_nat (List.length val))) * array32 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) * R) m').
 
    Add Ring wring : (Properties.word.ring_theory (word := Semantics.word))
         (preprocess [autorewrite with rew_word_morphism],
