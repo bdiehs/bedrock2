@@ -15,7 +15,7 @@ Local Coercion name_of_func (f : bedrock_func) := fst f.
 Definition createTimestampMessage :=
   let buffer := "buffer" in
   ("createTimestampMessage", ([buffer], []:list String.string, bedrock_func_body:(
-    store4(buffer, constr:(5));
+    store4(buffer, constr:(Ox"5"));
     store4(buffer + constr:(4), constr:(Ox"40"));
     store4(buffer + constr:(8), constr:(Ox"40"));
     store4(buffer + constr:(12), constr:(Ox"a4"));
@@ -51,7 +51,7 @@ Section WithParameters.
   Local Infix "*" := (sep).
   Local Infix "*" := (sep) : type_scope. Local Infix "*" := sep.
   Check (array scalar32 (word.of_Z 4)).
-  Notation array32 := (array (T := (@Semantics.word (@semantics_parameters p)))
+  Notation array32 := (array (width := @width (@semantics_parameters p))
                              scalar32 (word.of_Z 4)).
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
     forall p_addr buf R m t,
@@ -59,7 +59,7 @@ Section WithParameters.
       List.length buf = 5%nat ->
       WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
       (fun t' m' rets => t = t' /\ rets = nil /\
-         exists offsets, (scalar32 (word32 := (@Semantics.word (@semantics_parameters p))) p_addr (word.of_Z (Z.of_nat (List.length val))) * array32 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) * R) m').
+         exists offsets, (scalar32 (width := @width (@semantics_parameters p)) p_addr (word.of_Z (Z.of_nat (List.length val))) * array32 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) * R) m').
 
    Add Ring wring : (Properties.word.ring_theory (word := Semantics.word))
         (preprocess [autorewrite with rew_word_morphism],
@@ -67,18 +67,19 @@ Section WithParameters.
          constants [Properties.word_cst]).  
 
    Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
-  Proof.
+   Proof.
+    (*Set Printing Implicit.
+    Set Printing Coercions.*)
     repeat straightline.
     do 5 (destruct buf; [inversion H0|]).
     destruct buf; [| inversion H0].
     cbn[Array.array] in H.
+
     repeat straightline.
     replace (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)) with
       (word.add p_addr (word.of_Z 8)) in *. 2: ring.
-    repeat straightline.
     replace (word.add (word.add p_addr (word.of_Z 8)) (word.of_Z 4)) with
       (word.add p_addr (word.of_Z 12)) in *. 2: ring.
-    repeat straightline.
     replace (word.add (word.add p_addr (word.of_Z 12)) (word.of_Z 4)) with
       (word.add p_addr (word.of_Z 16)) in *. 2: ring.
     repeat straightline.
@@ -97,34 +98,18 @@ Section WithParameters.
     unfold v, v0, v1, v2, v3 in *.
     repeat (rewrite word.unsigned_of_Z in H5).
     unfold word.wrap in H5.
-    repeat (rewrite Zmod_small in H5; [|admit(*lia or omega*)]).
+    repeat (rewrite Zmod_small in H5; [|admit]).
+    
     cbn[val Datatypes.length Z.of_nat Pos.of_succ_nat Pos.succ].
     unfold a, a0, a1, a2 in H5.
-    simpl in *.
+    (*cancel_seps_at_indices 0%nat 3%nat.*)
     ecancel_assumption.
 Abort.
-(*    Check ( (scalar32 p_addr (word.of_Z (Z.of_nat (List.length val))))).
-    simpl in *. ecancel_assumption.
-    Unshelve.
-    - assumption.
-    Set Printing Implicit.
-    simpl.
-    replace a with (word.add p_addr (word.of_Z 4)). 2: admit(*ring*).
-    replace a0 with (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)). 2: admit(*ring*).
-    replace a1 with (word.add (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4))
-                      (word.of_Z 4)). 2: admit(*ring*).
-    replace a2 with (word.add
-              (word.add (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4))
-                        (word.of_Z 4)) (word.of_Z 4)). 2: admit(*ring*).
-    simpl in *.
-    ecancel.
-    ecancel_assumption.
-    cancel_seps_at_indices 0%nat 3%nat.
-    { Set Printing Implicit. simpl. reflexivity. }
-    
-    
-    try ecancel.
-   Abort.
+(*TODO:
+      - write sep logic for general dictionary with list (string, byte)
+      - blia
+      - write more bedrock code (write the actual response)
 *)
+
 End WithParameters.
 
