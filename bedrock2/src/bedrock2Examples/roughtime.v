@@ -54,7 +54,7 @@ Section WithParameters.
   Notation array32 := (array scalar32 (word.of_Z 4)).
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
     forall p_addr buf R m t,
-      (sep ((array32) p_addr buf) R) m ->
+      (sep (array32 p_addr buf) R) m ->
       List.length buf = 5%nat ->
       WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
       (fun t' m' rets => t = t' /\ rets = nil /\
@@ -97,13 +97,13 @@ Section WithParameters.
     unfold v, v0, v1, v2, v3 in *.
     repeat (rewrite word.unsigned_of_Z in H5).
     unfold word.wrap in H5.
-    repeat (rewrite Zmod_small in H5; [|admit]).
+    repeat (rewrite Zmod_small in H5 ; [|change width with 32; blia]).
     
     cbn[val Datatypes.length Z.of_nat Pos.of_succ_nat Pos.succ].
     unfold a, a0, a1, a2 in H5.
     (*cancel_seps_at_indices 0%nat 3%nat.*)
     ecancel_assumption.
-Abort.
+Qed.
 (*TODO:
       - write sep logic for general dictionary with list (string, byte)
       - blia
