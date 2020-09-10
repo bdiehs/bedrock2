@@ -1,5 +1,5 @@
 
-Require Import bedrock2.BasicCSyntax bedrock2.NotationsInConstr bedrock2.NotationsCustomEntry.
+Require Import bedrock2.Syntax bedrock2.NotationsInConstr bedrock2.NotationsCustomEntry.
 Require Import bedrock2.Array bedrock2.Scalars.
 Import Syntax BinInt String List.ListNotations ZArith.
 From coqutil Require Import Word.Interface Map.Interface.
@@ -9,11 +9,15 @@ From bedrock2.Map Require Import Separation SeparationLogic.
 Local Open Scope string_scope. Local Open Scope Z_scope. Local Open Scope list_scope.
 Local Coercion literal (z : Z) : Syntax.expr := Syntax.expr.literal z.
 Local Coercion var (x : string) : Syntax.expr := Syntax.expr.var x.
-Local Definition bedrock_func : Type := String.string * (list String.string * list String.string * cmd).
+Local Definition bedrock_func : Type :=
+  String.string * (list String.string * list String.string * cmd).
 Local Coercion name_of_func (f : bedrock_func) := fst f.
 
 Definition stringToHex (s : string) : Z.
 Admitted.
+
+Lemma stringHexBound : forall s, 0 <= stringToHex s < 2^32.
+Proof. Admitted.
 
 Definition createTimestampMessage :=
   let buffer := "buffer" in
@@ -43,105 +47,100 @@ Require Import bedrock2.ProgramLogic bedrock2.Scalars.
 Require Import coqutil.Z.Lia coqutil.Word.Properties.
 
 
+
+
 Section WithParameters.
   Context {p : FE310CSemantics.parameters}.
 
-  (*TODO: fix this*)
-  Definition val : list (string * (list byte)) :=
-    [("SIG", List.repeat (Init.Byte.x42) 64);
-    ("PATH", List.repeat (Init.Byte.x42) 64);
-    ("SREP", List.repeat (Init.Byte.x42) 64);
-    ("CERT", List.repeat (Init.Byte.x42) 64);
-    ("INDX", List.repeat (Init.Byte.x42) 64)].
+  Definition entry: Type := string * Semantics.word * (Semantics.word -> mem -> Prop).
 
-  (*Definition tag_to_word32 : String.string -> parameters.word.
-  Admitted.*)
-  
   Local Infix "*" := (sep).
-  Local Infix "*" := (sep) : type_scope. Local Infix "*" := sep.
+  Local Infix "*" := (sep) : type_scope.
+  Local Infix "+" := word.add.
   Notation array32 := (array scalar32 (word.of_Z 4)).
+  Definition stringToWord (s : string) := word.of_Z (stringToHex s).
+
+
+  Definition size_ok (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
+    scalar32 addr (word.of_Z (Z.of_nat (List.length entries))).
+  Definition offsets_ok (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
+    array32 (addr + (word.of_Z 4)) (match entries with | [] => [] | h::tail =>
+            (List.map (fun entry => stringToWord (fst (fst entry))) tail) end).
+  Definition tags_offset (sz: nat) := match sz with
+                                    | (0%nat) => 4%nat
+                                    | _ => (4%nat * sz)%nat
+                                    end.
+  Definition tags_ok (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
+    array32 (addr + (word.of_Z (Z.of_nat (tags_offset (List.length entries)))))
+            (List.map (fun entry => stringToWord (fst (fst entry))) entries).
+
+  Definition contents_offset (sz: nat) := (tags_offset sz + sz)%nat.
+  
+  Fixpoint message_ok (addr: Semantics.word) (entries : list entry): mem -> Prop :=
+    size_ok addr entries * offsets_ok addr entries * tags_ok addr entries *
+    let current_addr := addr + (word.of_Z (Z.of_nat (contents_offset (List.length entries)))) in
+    List.fold_left (fun P entry => (snd entry) (current_addr + (snd (fst entry))) * P)
+                   entries (emp True).
+
+  
+  Definition repeat_dummy n := fun addr => array32 addr (List.repeat (word.of_Z 66) n).
+
+  Definition srep_val : list entry :=
+    [("RADI", word.of_Z 0, repeat_dummy 4);
+    ("MIDP", word.of_Z 4, repeat_dummy 8);
+    ("ROOT", word.of_Z 12, repeat_dummy 64)
+    ].
+  
+  Definition message_val : list entry :=
+    [("SIG", word.of_Z 0, repeat_dummy 64);
+    ("PATH", word.of_Z 64, repeat_dummy 64);
+    ("SREP", word.of_Z 64, fun addr => message_ok addr srep_val);
+    ("CERT", word.of_Z 164, repeat_dummy 64);
+    ("INDX", word.of_Z 316, repeat_dummy 64)
+    ].
+    
+
   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
     forall p_addr buf R m t,
       ((array32 p_addr buf) * R) m ->
       List.length buf = 10%nat ->
       WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
-      (fun t' m' rets => t = t' /\ rets = nil /\
-         exists offsets, (scalar32 p_addr (word.of_Z (Z.of_nat (List.length val))) *
-                          array32 (word.add p_addr (word.of_Z 4)) (List.map (fun t => word.of_Z t) offsets) *
-                          array32 (word.add p_addr (word.of_Z 20)) (List.map (fun t => word.of_Z (stringToHex (fst t))) val) * R) m'). 
+      (fun t' m' rets => t = t' /\ rets = nil /\ (message_ok p_addr message_val * R) m'). 
   
    Add Ring wring : (Properties.word.ring_theory (word := Semantics.word))
         (preprocess [autorewrite with rew_word_morphism],
          morphism (Properties.word.ring_morph (word := Semantics.word)),
          constants [Properties.word_cst]).
 
+   Lemma word_add_simplify (w: Semantics.word) (x y: Z) :
+        w + (word.of_Z x) + (word.of_Z y) = w + (word.of_Z (x + y)).
+   Proof.
+     ring.
+   Qed.
 
+   Ltac word_simplify := repeat (rewrite word_add_simplify in *); cbv[Z.add Pos.add Pos.succ] in *.
+   
    Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
    Proof.
-    (*Set Printing Implicit.
-    Set Printing Coercions.*)
-    repeat straightline.
-    do 10 (destruct buf; [inversion H0|]).
-    destruct buf; [| inversion H0].
-    cbn[Array.array] in H.
-
-    repeat straightline.
-    replace (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 8)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 8)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 12)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 12)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 16)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 16)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 20)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 20)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 24)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 24)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 28)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 28)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 32)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 32)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 36)) in *. 2: ring.
-    repeat straightline.
-    split; [auto|].
-    split; [auto|].
-
-    exists [64; 64; 164; 316].
-    cbn[List.map Array.array].
-    cbn[val Datatypes.length Z.of_nat Pos.of_succ_nat Pos.succ].
-    cbn[val List.map fst array32].
-    
-
-    replace (word.add (word.add p_addr (word.of_Z 4)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 8)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 8)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 12)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 12)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 16)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 16)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 20)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 20)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 24)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 24)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 28)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 28)) (word.of_Z 4)) with
-        (word.add p_addr (word.of_Z 32)) in *. 2: ring.
-    replace (word.add (word.add p_addr (word.of_Z 32)) (word.of_Z 4)) with
-      (word.add p_addr (word.of_Z 36)) in *. 2: ring.
-    unfold v, v0, v1, v2, v3, v4, v5, v6, v7, v8 in *.
-    repeat (rewrite word.unsigned_of_Z in H10).
-    unfold word.wrap in H10.
-    repeat (rewrite Zmod_small in H10 ; [|change width with 32; try blia; admit]).
-
-    unfold a, a0, a1, a2, a3, a4, a5, a6, a7 in H10.
-    (*cancel_seps_at_indices 0%nat 3%nat.*)
-    ecancel_assumption.
-Qed.
-(*TODO:
-      - write sep logic for general dictionary with list (string, byte)
-      - blia
-      - write more bedrock code (write the actual response)
-*)
-
+     repeat straightline.
+     (* Start with header *)
+     do 10 (destruct buf; [inversion H0|]).
+     destruct buf; [| inversion H0].
+     cbn[Array.array] in H.
+     word_simplify.
+     repeat straightline.
+     split; [auto|].
+     split; [auto|].
+     unfold v, v0, v1, v2, v3, v4, v5, v6, v7, v8 in *.
+     repeat (rewrite word.unsigned_of_Z in H10).
+     unfold word.wrap in H10.
+     repeat (rewrite Zmod_small in H10 ;
+             [|change width with 32; try apply stringHexBound; blia]).
+     unfold a, a0, a1, a2, a3, a4, a5, a6, a7 in H10.
+     simpl.
+     unfold size_ok, offsets_ok, tags_ok, contents_offset, tags_offset.
+     simpl.
+   Admitted.
+   
 End WithParameters.
 
