@@ -229,7 +229,8 @@ Section WithParameters.
 
 
    Ltac word_unsigned z := rewrite (word.unsigned_of_Z z); replace (word.wrap z) with z by (cbn; blia).
-     
+
+
    
    Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
    Proof.
@@ -279,39 +280,73 @@ Section WithParameters.
        cbn [List.repeat Array.array List.skipn].
        ecancel_assumption. }
                              idtac.
-     do 10 straightline.
-     do 10 straightline.
-     do 2 straightline.
-     straightline_cleanup.
-     subst_words.
-     repeat word_simplify.
      
-     assert (x = lit v).
-     { subst v; rewrite word.of_Z_unsigned; auto. }
+     do 20 straightline.
+     subst v.
+     repeat straightline.
+     subst_words.
+     pose proof (f_equal word.of_Z H0).
+     rewrite word.of_Z_unsigned in H.
+     symmetry in H.
      rewrite H.
-     assert (List.length (List.skipn (Z.to_nat ((64 - v) / 4)) buf) <> 0%nat).
+     repeat word_simplify.
+     assert (List.length (List.skipn x1 buf) <> 0%nat).
      { rewrite List.skipn_length, H2. admit. }
-     destruct (List.skipn (Z.to_nat ((64 - v) / 4)) buf) eqn:H17; try contradiction.
+     destruct (List.skipn x1 buf) eqn:H17; try contradiction.
      array_app_cons_sep.
-     word_simplify.
      repeat straightline.
      { subst_words.
-       subst v.
-       rewrite word.of_Z_unsigned in *.
        eexists; auto.
        split.
-       - split; auto.
-         split; try split; try split; auto; try blia.
-         { rewrite word.unsigned_sub.
-           word_simplify.
-           admit. }
+       - exists (x1 + 1)%nat.
+         split; auto.
+         split; try split; try split; auto.
+         { admit. }
+         { admit. }
          use_sep_assumption.
          cancel.
          cancel_seps_at_indices 2%nat 1%nat.
          { repeat word_simplify.
-           f_equal.
            admit. }
          repeat word_simplify.
+         match goal with
+         | |- context [List.repeat ?x (?n + 1)] =>
+           replace (List.repeat x (n + 1)) with (List.repeat x n ++ [x])
+         end.
+         { array_app_cons_sep.
+           rewrite List.repeat_length.
+           repeat word_simplify.
+           change (Ox"42") with 66.
+           cbn[seps].
+           cancel. }
+         { admit. }
+       - admit. }
+     
+     repeat word_simplify.
+     
+           ecancel_assumption.
+           cancel_seps_at_indices 1%nat 0%nat.
+           cancel.
+           ecancel_assumption.
+           change (word.wrap 4) with 4.
+           rewrite ZifyInst.of_nat_to_nat_eq.
+           assert (0 <> ((64 - word.unsigned x0) / 4)).
+           Search 
+           { blia.
+           unfold Z.max.
+           Search Z.of_nat Z.to_nat.
+           Search word.of_Z.
+           word_simplify.
+           rewrite word.of_Z_unsigned.
+           repeat word_simplify.
+           
+           
+           match goal with
+           | |- context [ @array ?w ?word ?v ?m ?T ?PT ?SZ ?start (?xs ++ ?ys) ] =>
+             pose proof iff1ToEq (@array_append w word _ v m _ T PT SZ xs ys start); idtac T
+           end.
+
+         
          replace (Z.to_nat ((64 - word.unsigned (word.sub x0 (lit 4))) / 4)) with ((Z.to_nat ((64 - word.unsigned x0) / 4)) + 1)%nat by admit.
 
      
