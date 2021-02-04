@@ -60,8 +60,8 @@ void createTimestampMsgResponse(uint8_t *buffer) {
   memcpy(buffer + 124, "ROOT", 4);
 
   addToBuffer(buffer, 1000000, 128, 4);
-  int64_t timestamp = 1000000 * time(NULL);
-  addToBuffer(buffer, timestamp, 132, 8);
+  // int64_t timestamp = 1000000 * time(NULL);
+  addToBuffer(buffer, 1610753859, 132, 8);
 
   for (int i=0; i<64; i++) {
   	buffer[140+i] = 0x42;

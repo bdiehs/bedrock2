@@ -20,8 +20,9 @@
 
 #include <openssl/curve25519.h>
 
+#include "c_code.h"
 #include "logging.h"
-#include "message.h"
+// #include "message.h"
 #include "protocol.h"
 #include "server.h"
 
@@ -117,7 +118,7 @@ bool Server::MakeResponse(uint8_t *out_response, size_t *out_len,
   static_assert(kMaxResponseSize <= kMaxRecvPacketSize,
                 "Receive buffers are too small to use as send buffers");
   
-  // Builder response(out_response, kMaxResponseSize, 5); // 
+  // Builder response(out_response, kMaxResponseSize, 5); 
   // static_assert(kTagSIG < kTagPATH, "Tags must be written in order");
   // static_assert(kTagPATH < kTagSREP, "Tags must be written in order");
   // static_assert(kTagSREP < kTagCERT, "Tags must be written in order");
@@ -134,7 +135,29 @@ bool Server::MakeResponse(uint8_t *out_response, size_t *out_len,
   //   ROUGHTIME_LOG(ERROR) << "failed to construct response";
   //   return false;
   // }
-  createTimestampMsgResponse(out_response);
+  createTimestampMessage((uintptr_t) out_response);
+  
+  // printf("Here: ");
+  
+  // for (int i=0; i<360; i+=4) {
+  //   for (int j=0; j<4; j++) {
+  //     printf("%02hhx", out_response[i+j]);
+  //   }
+  //   printf("\t");
+  //   for (int j=0; j<4; j++) {
+  //     if (!isprint(out_response[i+j])) {
+  //       printf(".");
+  //     } else {
+  //       printf("%c", out_response[i+j]);
+  //     }
+
+  //   }
+  //   printf("\n");
+    
+  // }
+
+  //createTimestampMsgResponse(out_response);
+  // createTimestampMessage((uintptr_t) out_response);
   *out_len = 360;
   
   // tree_.GetPath(path, index);

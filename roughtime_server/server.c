@@ -44,18 +44,17 @@ int main(int argc, char *argv[]) {
 	// socket address used to store client address
 	struct sockaddr_in client_address;
 	int client_address_len = sizeof(client_address);
+	fprintf(stderr, "here!\n");
 
 	// run indefinitely
 	while (true) {
 		char buffer[1024];
 		// read content into buffer from an incoming client
-		int len = recvfrom(sock, buffer, sizeof(buffer), 0,
-		                   (struct sockaddr *)&client_address,
-		                   &client_address_len);
+		int len = recv(sock, buffer, sizeof(buffer), 0);
 
 		// inet_ntoa prints user friendly representation of the
 		// ip address
-
+		printf("sock: %d\n", sock);
 		buffer[len] = '\0';
 		printf("received from client %s:\n",
 		       inet_ntoa(client_address.sin_addr));
@@ -68,8 +67,7 @@ int main(int argc, char *argv[]) {
 		print_msg(buffer_out, 360);
 		// createMessage(buffer_out, increment(x));
 		// send same content back to the client ("echo")
-		sendto(sock, buffer_out, 360, 0, (struct sockaddr *)&client_address,
-		       client_address_len);
+		send(sock, buffer_out, 360, 0);
 	}
 
 	return 0;

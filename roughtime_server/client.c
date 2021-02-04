@@ -43,14 +43,13 @@ int main() {
 
 	// send data
 	int len =
-	    sendto(sock, data_to_send, sizeof(data_to_send), 0,
-	           (struct sockaddr*)&server_address, sizeof(server_address));
+	    send(sock, data_to_send, sizeof(data_to_send), 0);
 		// received echoed data back
 	char buffer[1024];
 	// fprintf(stderr, "before recv\n");
 	// printf("buff_size: %d\n", len);
 	int server_addr_len = sizeof(server_address);
-	int resp = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr*)&server_address, &server_addr_len);
+	int resp = recv(sock, buffer, sizeof(buffer), 0);
 	if (resp == -1) {
 		printf("Error\n");
 		close(sock);

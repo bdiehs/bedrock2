@@ -57,6 +57,7 @@ cc_library(
     hdrs = ["server.h"],
     deps = [
     	":message",
+	":c_code",
         ":protocol",
         ":time_source",
         ":roughtime_logging",
@@ -152,6 +153,13 @@ cc_library(
     name = "message",
     srcs = ["message.cc"],
     hdrs = ["message.h"],
+    deps = [
+    ],
+)
+
+cc_library(
+    name = "c_code",
+    hdrs = ["c_code.h"],
     deps = [
     ],
 )
