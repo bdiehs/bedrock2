@@ -6,6 +6,8 @@ Import Syntax BinInt String List.ListNotations ZArith.
 From coqutil Require Import Word.Interface Map.Interface.
 Require Import coqutil.Byte coqutil.Z.HexNotation coqutil.Z.Lia.
 Require Import Coq.Strings.Ascii.
+Require Import bedrock2.ZnWords.
+
 
 Local Open Scope string_scope. Local Open Scope Z_scope. Local Open Scope list_scope.
 Local Coercion literal (z : Z) : Syntax.expr := Syntax.expr.literal z.
@@ -29,6 +31,78 @@ Proof.
 Admitted.
 
 Opaque Z_of_string.
+
+
+Definition createTimestampMessage :=
+  let buffer := "buffer" in
+  let sig := "sig" in 
+  let i := "i" in
+  ("createTimestampMessage", ([buffer; sig], []:list String.string, bedrock_func_body:(
+    store4(buffer, coq:(Ox"5"));
+    store4(buffer + coq:(4), coq:(Ox"40"));
+    store4(buffer + coq:(8), coq:(Ox"40"));
+    store4(buffer + coq:(12), coq:(Ox"a4"));
+    store4(buffer + coq:(16), coq:(Ox"13c"));
+
+    store4(buffer + coq:(20), coq:(Z_of_string "SIG"));
+    store4(buffer + coq:(24), coq:(Z_of_string "PATH"));
+    store4(buffer + coq:(28), coq:(Z_of_string "SREP"));
+    store4(buffer + coq:(32), coq:(Z_of_string "CERT"));
+    store4(buffer + coq:(36), coq:(Z_of_string "INDX"));
+
+    i = (coq:(64)); while (i) { i = (i - coq:(4));
+      store4(buffer + coq:(100) - i, load4(sig + coq:(64) - i))
+    };
+
+    store4(buffer + coq:(104), coq:(Ox"3"));
+    store4(buffer + coq:(108), coq:(Ox"4"));
+    store4(buffer + coq:(112), coq:(Ox"c"));
+
+    store4(buffer + coq:(116), coq:(Z_of_string "RADI"));
+    store4(buffer + coq:(120), coq:(Z_of_string "MIDP"));
+    store4(buffer + coq:(124), coq:(Z_of_string "ROOT"));
+    
+    store4(buffer + coq:(128), coq:(Ox"42"));
+    store4(buffer + coq:(132), coq:(Ox"42"));
+    store4(buffer + coq:(136), coq:(Ox"42"));
+    i = (coq:(64)); while (i) { i = (i - coq:(4));
+      store4(buffer + coq:(200) - i, coq:(Ox"42"))
+    };
+
+    store4(buffer + coq:(204), coq:(Ox"2"));
+    store4(buffer + coq:(208), coq:(Ox"40"));
+    store4(buffer + coq:(212), coq:(Z_of_string "SIG"));
+    store4(buffer + coq:(216), coq:(Z_of_string "DELE"));
+    i = (coq:(64)); while (i) { i = (i - coq:(4));
+      store4(buffer + coq:(280) - i, coq:(Ox"42"))
+    };
+
+    store4(buffer + coq:(284), coq:(Ox"3"));
+    store4(buffer + coq:(288), coq:(Ox"20"));
+    store4(buffer + coq:(292), coq:(Ox"28"));
+
+    store4(buffer + coq:(296), coq:(Z_of_string "PUBK"));
+    store4(buffer + coq:(300), coq:(Z_of_string "MINT"));
+    store4(buffer + coq:(304), coq:(Z_of_string "MAXT"));
+ 
+    i = (coq:(32)); while (i) { i = (i - coq:(4));
+      store4(buffer + coq:(336) - i, coq:(Ox"42"))
+    };
+
+    store4(buffer + coq:(340), coq:(Ox"42"));
+    store4(buffer + coq:(344), coq:(Ox"42"));
+    store4(buffer + coq:(348), coq:(Ox"42"));
+    store4(buffer + coq:(352), coq:(Ox"42"));
+    store4(buffer + coq:(356), coq:(Ox"42"))))).
+
+
+Require Import bedrock2.ToCString.
+Definition prog : string :=
+  Eval cbn in c_module [createTimestampMessage].
+Print prog.
+
+
+
 
 Definition createTimestampMessage :=
   let buffer := "buffer" in
@@ -59,7 +133,8 @@ Definition createTimestampMessage :=
     store4(buffer + coq:(124), coq:(Z_of_string "ROOT"));
     
     store4(buffer + coq:(128), coq:(Ox"42"));
-    store4(buffer + coq:(132), coq:(Ox"4242"));
+    store4(buffer + coq:(132), coq:(Ox"42"));
+    store4(buffer + coq:(136), coq:(Ox"42"));
     i = (coq:(64)); while (i) { i = (i - coq:(4));
       store4(buffer + coq:(200) - i, coq:(Ox"42"))
     };
@@ -80,9 +155,15 @@ Definition createTimestampMessage :=
     store4(buffer + coq:(300), coq:(Z_of_string "MINT"));
     store4(buffer + coq:(304), coq:(Z_of_string "MAXT"));
  
-    i = (coq:(48)); while (i) { i = (i - coq:(4));
-      store4(buffer + coq:(352) - i, coq:(Ox"42"))
-    }))).
+    i = (coq:(32)); while (i) { i = (i - coq:(4));
+      store4(buffer + coq:(336) - i, coq:(Ox"42"))
+    };
+
+    store4(buffer + coq:(340), coq:(Ox"42"));
+    store4(buffer + coq:(344), coq:(Ox"42"));
+    store4(buffer + coq:(348), coq:(Ox"42"));
+    store4(buffer + coq:(352), coq:(Ox"42"));
+    store4(buffer + coq:(356), coq:(Ox"42"))))).
     
 Require Import bedrock2.ToCString.
    Definition allProgsAsCString : string :=
@@ -104,7 +185,7 @@ Require Import coqutil.Tactics.rewr.
 Section WithParameters.
   Context {p : FE310CSemantics.parameters}.
 
-  Definition entry : Type := string * Semantics.word * (Semantics.word -> mem -> Prop).
+  (*Definition entry : Type := string * Semantics.word * (Semantics.word -> mem -> Prop).*)
   
   Infix "*" := (sep).
   Infix "*" := (sep) : type_scope.
@@ -121,66 +202,70 @@ Section WithParameters.
   
   Definition stringToWord (s : string) := word.of_Z (Z_of_string s).
 
-  Definition size_field (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
-    scalar32 addr (/_ (Z.of_nat (List.length entries))).
-  
-  Definition offsets_field (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
-    array32 (addr ^+ (word.of_Z 4)) 
-            (List.map (fun entry => (snd (fst entry))) (tl entries)).
-  
-  Definition tags_offset (entries : list entry) :=
-    (4 + 4 * (List.length (tl entries)))%nat.
-  
-  Definition tags_field (addr: Semantics.word) (entries : list entry) : mem -> Prop :=
-    array32 (addr ^+ (word.of_Z (Z.of_nat (tags_offset entries))))
-            (List.map (fun entry => stringToWord (fst (fst entry))) entries).
+  Inductive entry :=
+  | rec : list (prod string entry) -> entry
+  | val : list (Semantics.word) -> entry.
 
-  Definition contents_offset (entries : list entry) :=
-    (tags_offset entries + 4 * (List.length entries))%nat.
+  Fixpoint size (e : entry) : Z :=
+    match e with
+    | rec l => (Z.of_nat (1 + (2 * List.length l - 1))%nat) + fold_left (fun n e' => n + size (snd e')) l 0
+    | val l => Z.of_nat (List.length l)
+    end.
   
-  Definition message_ok (addr: Semantics.word) (entries : list entry): mem -> Prop :=
-    size_field addr entries * offsets_field addr entries * tags_field addr entries *
-    let current_addr := addr ^+ (word.of_Z (Z.of_nat (contents_offset entries))) in
-    List.fold_left (fun P entry => (snd entry) (current_addr ^+ (snd (fst entry))) * P)
-                   entries (emp True).
-  
-  Definition repeat_dummy n := fun addr => array32 (addr: Semantics.word) (List.repeat (/_ (Ox"4242")) n).
+  Fixpoint compute_offsets' (l : list (prod string entry)) (carry : Z) : list Z :=
+    match l with
+    | nil => []
+    | (_, e) :: l' => (carry + 4 * size e) :: (compute_offsets' l' (carry + 4 * size e))
+    end.
 
-
-  Definition srep_val : list entry :=
-    [("RADI", word.of_Z 0, repeat_dummy 1);
-    ("MIDP", word.of_Z 4,  repeat_dummy 2);
-    ("ROOT", word.of_Z 12, repeat_dummy 64)
-    ].
-
-  Definition dele_val : list entry :=
-    [("MINT", word.of_Z 0, repeat_dummy 8);
-    ("MAXT", word.of_Z 32, repeat_dummy 8);
-    ("PUBK", word.of_Z 40, repeat_dummy 64)
-    ].
-
-  Definition cert_val : list entry :=
-    [("SIG", word.of_Z 0, repeat_dummy 64);
-    ("DELE", word.of_Z 64, fun addr => message_ok addr dele_val)
-    ].
-  
-  
-  Definition message_val : list entry :=
-    [("SIG", word.of_Z 0, fun addr => (array32 addr (List.repeat (/_ (Ox"42")) 64)));
-    ("PATH", word.of_Z 64, fun _ => (emp True));
-    ("SREP", word.of_Z 64, fun addr => message_ok addr srep_val);
-    ("CERT", word.of_Z 164, fun addr => message_ok addr cert_val);
-    ("INDX", word.of_Z 316, fun addr => (array32 addr (List.repeat (/_ (Ox"42")) 64)))
-    ].
+  Definition compute_offsets l := removelast (compute_offsets' l 0).
     
+  Fixpoint flatten (e : entry) : list (Semantics.word) :=
+    match e with
+    | rec l => [/_ (Z.of_nat (List.length l))] ++
+              List.map word.of_Z (compute_offsets l) ++
+              List.map (fun p => stringToWord (fst p)) l ++
+              List.concat (List.map (fun p => flatten (snd p)) l)
+    | val l => l
+    end.
 
-  Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" := fun functions =>
-    forall p_addr buf R m t,
-      ((array32 p_addr buf) * R) m ->
-      List.length buf = 352%nat ->
-      WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
-      (fun t' m' rets => t = t' /\ rets = nil /\ (message_ok p_addr message_val * R) m'). 
+  Definition repeat42 n := List.repeat (/_ (Ox"42")) n.
+
+  Definition srep_entry : entry :=
+    rec [("RADI", val [/_ (Ox"42")]);
+        ("MIDP", val [/_(Ox"42"); /_(Ox"42")]);
+        ("ROOT", val (repeat42 16))].
   
+  Definition dele_entry : entry :=
+    rec [("PUBK", val (repeat42 8));
+        ("MINT", val [/_ (Ox"42"); /_ (Ox"42")]);
+        ("MAXT", val [/_ (Ox"42"); /_ (Ox"42")])].
+
+  Definition cert_entry : entry :=
+    rec [("SIG", val (repeat42 16));
+        ("DELE", dele_entry)].
+
+  Definition message_entry : entry :=
+    rec [("SIG", val (repeat42 16));
+        ("PATH", val nil);
+        ("SREP", srep_entry);
+        ("CERT", cert_entry);
+        ("INDX", val [/_ (Ox"42")])].
+
+  (*
+  Definition message_entry : entry :=
+    rec [("SIG", val (repeat42 16));
+        ("PATH", val nil);
+        ("SREP", rec [("RADI", val [/_ (Ox"42")]);
+                     ("MIDP", val [/_(Ox"42"); /_(Ox"42")]);
+                     ("ROOT", val (repeat42 16))]);
+        ("CERT", rec [("SIG", val (repeat42 16));
+                     ("DELE", rec [("PUBK", val (repeat42 8));
+                                  ("MINT", val [/_ (Ox"42"); /_ (Ox"42")]);
+                                  ("MAXT", val [/_ (Ox"42"); /_ (Ox"42")])])]);
+        ("INDX", val (repeat42 64))].
+  *)
+
    Add Ring wring : (Properties.word.ring_theory (word := Semantics.word))
         (preprocess [autorewrite with rew_word_morphism],
          morphism (Properties.word.ring_morph (word := Semantics.word)),
@@ -190,8 +275,9 @@ Section WithParameters.
      repeat match goal with x := _ : word.rep |- _ => subst x end.
    
    Notation "a |-> v" := (scalar32 a (/_ v)) (at level 30).
-   Notation "l [[ n  |:= v ]]" := (List.listUpdate l n v) (left associativity, at level 50).
-
+   Notation "l .[[ n |=> v ]]" := (List.upd l n v) (left associativity, at level 50).
+   Notation "l .[[ n |==> xs ]]" := (List.upds l n xs) (left associativity, at level 50).
+ 
    Ltac word_simplify :=
        match goal with
        | |- context [?a ^+ ?b] => progress (ring_simplify (a ^+ b))
@@ -203,517 +289,170 @@ Section WithParameters.
      | |- context [\_ (/_ ?z)] => rewrite (word.unsigned_of_Z z); change (word.wrap z) with z
      | |- context [/_ (\_ ?z)] => rewrite (word.of_Z_unsigned z)
      end.
-
-   Ltac word_simplify_in H :=
-       match type of H with 
-       | context [?a ^+ ?b] => progress (ring_simplify (a ^+ b) in H)
-       | context [?a ^- ?b] => progress (ring_simplify (a ^- b) in H)
-       end.
-   Ltac word_Z_unsigned_in H:=
-     match type of H with
-     | context [\_ (/_ ?z)] => rewrite (word.unsigned_of_Z z) in H; change (word.wrap z) with z in H
-     | context [/_ (\_ ?z)] => rewrite (word.of_Z_unsigned z) in H
-     end.
-
-   Ltac word_unwrap t :=
-     unfold word.wrap; rewrite (Zmod_small t); [| assert (0 <= t < 2^width) by blia; assumption].
-
-   Ltac word_unwrap_in t H :=
-     unfold word.wrap in H; rewrite (Zmod_small t) in H; [| assert (0 <= t < 2^width) by blia; assumption].
-
-   Definition todo : False. Admitted.
-
-   Ltac subst_nat :=
-     match goal with
-     | H : @eq nat ?x ?y |- context[?x] => rewrite H
-     end.
-(*
-   Ltac array_straightline :=
-     match goal with
-     | x : ?p ?m |- @WeakestPrecondition.store _ Syntax.access_size.four ?m ?addr' ?v _ => match p with context [array32 ?addr ?xs] =>
-       remember (Z.to_nat ((\_ (addr' ^- addr)) / 4)) as n eqn:Heqn;
-       ring_simplify (addr' ^- addr) in Heqn;
-       word_Z_unsigned_in Heqn;
-       cbv in Heqn; (*Dangerous*)
-       assert (List.length (xs [[n |:= v]]) = 1024%nat) by (rewrite List.listUpdate_length; blia);
-       eapply (array_store_four_of_sep_32bit _ addr addr' n xs _ (word.of_Z 4)); subst ;[try word_Z_unsigned; try ring | ecancel_assumption | subst_nat; blia |]
- end
-     end.
-
-   Ltac array_first_cleanup H :=
-     rewrite List.skipn_skipn in H;
-  *)   
    
-   Ltac skipn_simpl :=
-     match goal with
-     | H : context [List.skipn ?a (List.skipn ?b ?l)] |- _ =>
-       rewrite List.skipn_skipn in H;
-         cbn[Nat.add] in H
-     end.
-
-   
-   Ltac array_first_straightline :=
-     match goal with
-     | H : ?p ?m |- @WeakestPrecondition.store _ access_size.four ?m ?addr' _ _ =>
-       match p with
-         context [array32 ?addr ?xs] =>
-         subst_words;
-         try (rewrite List.skipn_skipn in H; cbn[Nat.add] in H);
-         array_app_cons_sep;
-         try word_simplify_in H;
-         eapply array_first_store_four_of_sep_32bit;
-         [ reflexivity | ecancel_assumption | try rewrite skipn_length; blia |];
-         repeat straightline
-       end
-     end.
-
-   Ltac array_first_before :=
-     match goal with
-     | H : ?p ?m |- @WeakestPrecondition.store _ access_size.four ?m ?addr' _ _ =>
-       subst_words;
-       eapply array_first_store_four_of_sep_32bit;
-       [ reflexivity | ecancel_assumption | try rewrite skipn_length; blia |];
-       array_app_cons_sep;
-       repeat straightline
-     end.
-   
-   Ltac array_first_after :=
-     match goal with
-     | H : context [array32 (word.add ?a ?b) (List.skipn ?m ?l)] |- _ =>
-       ring_simplify (word.add a b) in H;
-       try (rewrite List.skipn_skipn in H; cbn[Nat.add] in H)
-     end.
-   
-   Ltac array_first_straightline' := array_first_before; array_first_after.
-
-   Ltac subst_skipn :=
-     match goal with
-     | H : context [List.skipn ?n ?buf] |- _ =>
-       match goal with
-       | H' : List.length ?buf = ?l |- _ =>
-         is_var buf;
-         let buf' := fresh buf in
-         let H0 := fresh H in
-         let H1 := fresh H in
-         remember (List.skipn n buf) as buf' eqn:H0;
-         pose proof (H1 := f_equal (@List.length _) H0);
-         rewrite skipn_length, H' in H1;
-         cbn[Nat.sub] in H1;
-         clear H' H0 buf;
-         rename buf' into buf
-       end
-     end.
-
-   Ltac array_straightline :=
-     match goal with
-     | x : ?p ?m |- @WeakestPrecondition.store _ Syntax.access_size.four ?m ?addr' ?v _ =>
-       match p with
-       | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep' _ addr addr' xs);
-         [ecancel_assumption |];
-         ring_simplify (addr' ^- addr);
-         word_Z_unsigned;
-         progress cbv zeta;
-         split; [try reflexivity | split; [simpl (Z.to_nat _); try blia|] ]
-       end
-     end.
-   
-   (*Ideally I want to do context on two terms inside one hypothesis*)
-   
-   Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
-   Proof.
-     repeat straightline.
-     eapply (array_store_four_of_sep' _); [ecancel_assumption|].
-     
-     ring_simplify (p_addr ^- p_addr).
-     word_Z_unsigned.
-     ring_simplify (0 / 4).
+   Ltac Z_to_nat_div :=
      match goal with
      | |- context [Z.to_nat (?a / 4)] =>
        let r := isZcst a in
        lazymatch r with | true =>
          let x := eval cbv in (Z.to_nat (a/4)) in change (Z.to_nat (a/4)) with x
-       end;
-       idtac a r
+       end
      end.
-     simpl (Z.to_nat _).
-     rewrite 
-     
-     Search word.of_Z word.unsigned.
-     
-     
-     word_Z_unsigned.
-     cbv zeta.
-     word_Z_unsigned.
-     split; [reflexivity|].
-     
-     split.
+   
+   Ltac array_straightline_before :=
      match goal with
      | x : ?p ?m |- @WeakestPrecondition.store _ Syntax.access_size.four ?m ?addr' ?v _ =>
        match p with
        | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep' _ addr addr' xs);
-         [ecancel_assumption |];
+         eapply array_store_four_of_sep32bit'; [reflexivity| ecancel_assumption |];
          ring_simplify (addr' ^- addr);
-         cbv zeta
+         word_Z_unsigned;
+         split; [try reflexivity; ZnWords | Z_to_nat_div; split; [repeat rewrite List.upds_length; ZnWords|] ]
        end
      end.
 
-     array_straightline.
-     eapply (array_store_four_of_sep' _ _ _ _); [ecancel_assumption|].
-     ring_simplify term+
-     cbv zeta.
-     
-     
-     array_straightline.
-     array_straightline; ring_simplify (p_addr ^- p_addr).
-     
-     array_straightline.
-     { ring_simplify (p_addr ^- p_addr). word_Z_unsigned. reflexivity. }
-     { admit. }
-     cbv zeta.
-                         
-     eapply array_store_four_of_sep'; [reflexivity| ecancel_assumption| |].
-     { word_simplify. word_Z_unsigned. 
-     
-     
-     
-     assert (Datatypes.length buf = 352%nat) by blia; clear H0.
-     do 10 array_first_straightline'.
-     clear H9 H8 H7 H6 H5 H4 H3 H2 H0 H.
-     subst_skipn.
-     remember ((p_addr ^+ /_ 36) |-> Z_of_string "INDX" *
-         ((p_addr ^+ /_ 32) |-> Z_of_string "CERT" *
-          ((p_addr ^+ /_ 28) |-> Z_of_string "SREP" *
-           ((p_addr ^+ /_ 24) |-> Z_of_string "PATH" *
-            ((p_addr ^+ /_ 20) |-> Z_of_string "SIG" *
-             ((p_addr ^+ /_ 16) |-> 316 *
-              ((p_addr ^+ /_ 12) |-> 164 *
-               ((p_addr ^+ /_ 8) |-> 64 * ((p_addr ^+ /_ 4) |-> 64 * (p_addr |-> 5 * R)))))))))%type) as P.
-     assert ((P * array32 (p_addr ^+ /_ 40) buf) m9) by (rewrite HeqP; ecancel_assumption).
-     clear H10.
-     subst i.     
+   Ltac upds_simpl_step :=
+     match goal with
+     | |- context [ ?l.[[?i |==> ?vs]].[[?j |==> ?vs']] ] =>
+       rewrite <- List.upds_app2 by (try reflexivity; ZnWords)
+     | H : context [ ?l.[[?i |==> ?vs]].[[?j |==> ?vs']] ] |- _ =>
+       rewrite <- List.upds_app2 in H by (try reflexivity; ZnWords)
+     (*| H : context [ ?l .[[?i |=> ?v]].[[?j |==> ?vs]] ] |- _ =>
+       rewrite <-List.upds_cons' in H
+     | H : context [ ?l.[[?i |=> ?v]] ] |- _ =>
+       rewrite <- List.upds_1 in H*)
+     end.
+   Ltac upds_simpl := unfold List.upd in *; repeat upds_simpl_step.
+   
+   Ltac clear_unused :=
+     match goal with
+     | H0 : (@eq Z _ _) |- _ =>
+       match goal with
+       | H1 : (sep ?P ?Q) ?m |- context [?m] => clear-H0 H1
+       end
+     end.
+   
+   Ltac array_straightline_after :=
+     repeat straightline; subst_words; clear_unused; upds_simpl.
+   
+   Ltac array_straightline := array_straightline_before; array_straightline_after.
 
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 64 - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 (p_addr ^+ (/_ 40)) (List.repeat (word.of_Z (Ox"42")) i) * array32 (p_addr ^+ (/_ (104 - V))) (List.skipn i buf) * P * R) M) (fun t m i buff => t = T /\ buff = p_addr /\ (P * array32 (p_addr ^+ /_ 40) (List.repeat (word.of_Z (Ox"42")) 16) * array32 (p_addr ^+ (/_ (104))) (List.skipn 16%nat buf) * R) m))) _ _ _ _ _ _ _);
-      cbn [reconstruct map.putmany_of_list HList.tuple.to_list
-           HList.hlist.foralls HList.tuple.foralls
-           HList.hlist.existss HList.tuple.existss
-           HList.hlist.apply  HList.tuple.apply
-           HList.hlist
+   Ltac simpl_list_length_exprs ::= rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?List.length_nil, ?List.repeat_length, ?List.upds_length in *.
 
-           (* List.repeat *) Datatypes.length
-           HList.polymorphic_list.repeat HList.polymorphic_list.length
-           PrimitivePair.pair._1 PrimitivePair.pair._2] in *.
-     { repeat straightline. }
-     { eapply (Z.lt_wf 0). }
-     { exists 0%nat.
-       split; [auto| split; [word_Z_unsigned; blia| split; [auto|] ] ] .
-       simpl (104 - _).
-       cbn [List.repeat Array.array List.skipn List.map].
-       ecancel_assumption. }
-     { repeat straightline.
-       2: {
-         split; try split; auto.
-         replace x2 with 16%nat in H0, H4 by blia.
-         simpl in H0.
-         rewrite H0 in *.
-         simpl (104-0) in H4.
-         ecancel_assumption. }
-       
-       subst_words.
-       word_simplify.
-       subst v.
-       repeat word_simplify_in H4.
-       word_Z_unsigned_in H4.
-       pose proof (word.unsigned_range x0).
-       assert (List.length (List.skipn x2 buf) <> 0%nat) by (rewrite List.skipn_length; blia).
-       destruct (List.skipn x2 buf) eqn:H17; try contradiction.
-       array_app_cons_sep.
+   Definition repeatLoop end_ :=
+     let buffer := "buffer" in
+     let i := "i" in
+     bedrock_func_body:(while (i) { i = (i - coq:(4));
+      store4(buffer + coq:((4 * end_)%Z) - i, coq:(Ox"42"))
+    }).
+
+   Local Notation tupl := (fun a b =>{|
+     PrimitivePair.pair._1 := a;
+     PrimitivePair.pair._2 := {|
+                           PrimitivePair.pair._1 := b;
+                           PrimitivePair.pair._2 := tt |} |} :  HList.tuple (Semantics.word) (2%nat)).
+   Lemma spec_of_repeatLoop :
+     forall functions end_ num_iter p_addr buf l vs R m t (post : _->_->_->Prop),
+       ((array32 p_addr (buf.[[0 |==> vs]])) * R) m ->
+       enforce ["i";"buffer"] (tupl (/_ (4 * num_iter)%Z) p_addr) l ->
+       0 <= num_iter -> (0 <= end_ < 2 ^ (width - 2)) -> (num_iter <= end_ < Z.of_nat (List.length buf)) -> (end_ = num_iter + Z.of_nat (List.length vs) - 1) ->
+       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"] (tupl (/_ 0) p_addr))) ->
+         WeakestPrecondition.cmd (WeakestPrecondition.call functions) (repeatLoop end_) t m l post.
+   Proof.
+     intros.
+     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 4 * num_iter - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) i]]) * R) M) (fun t m i buff => t = T /\ i = /_ 0 /\ buff = p_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) (Z.to_nat num_iter)]]) * R) m))) _ _ _ _ _ _ _);
+       cbn [reconstruct map.putmany_of_list HList.tuple.to_list
+             HList.hlist.foralls HList.tuple.foralls
+             HList.hlist.existss HList.tuple.existss
+             HList.hlist.apply  HList.tuple.apply
+             HList.hlist
+             
+             (* List.repeat *) Datatypes.length
+             HList.polymorphic_list.repeat HList.polymorphic_list.length
+             PrimitivePair.pair._1 PrimitivePair.pair._2] in *.
+     { exact H0. }
+       { eapply (Z.lt_wf 0). }
+       { exists 0%nat.
+         split; [auto| split; [ZnWords| split; [auto|] ] ] .
+         upds_simpl.
+         cbn [List.repeat].
+         rewrite app_nil_r.
+         eassumption. }
+       { repeat straightline.
+         { subst_words.
+           eapply array_store_four_of_sep32bit'; [reflexivity| ecancel_assumption|].
+           split; [ZnWords| split; [ZnWords|] ].
+           repeat straightline.
+           eexists; eexists; split.
+           { exists (S x2)%nat.
+             split; [auto| split; [ZnWords|split; [auto|] ] ].
+             upds_simpl.
+             cbn[List.repeat].
+             rewrite List.repeat_cons, List.app_assoc.
+             ecancel_assumption. }
+           split; [ZnWords|auto]. }
+
+         { split; try split; try split; auto.
+           { ZnWords. }
+           replace x2 with (Z.to_nat num_iter) in H9 by blia.
+           ecancel_assumption. } }
        repeat straightline.
-       subst_words.
-       eexists; eexists; split.
-       { exists (1 + x2)%nat.
-         replace (64 - 4 * Z.of_nat (1 + x2)) with (60 - 4 * Z.of_nat x2) by blia.
-         split; auto.
-         split; [|split; [auto|] ].
-         { rewrite word.unsigned_sub.
-           word_Z_unsigned.
-           word_unwrap (word.unsigned x0 - 4).
-           blia.
-         }
-         { pose proof (f_equal word.of_Z H0).
-           word_Z_unsigned_in H8.
-           rewrite H8 in H7.
-           cbn[Nat.add List.repeat].
-           rewrite repeat_cons.
-           array_app_cons_sep.
-           rewrite repeat_length, <- List.tl_skipn, H17.
-           cbn[List.tl].
-           repeat word_simplify.
-           repeat word_simplify_in H7.
-           change (66) with (Ox "42") in H7.
-           ecancel_assumption. }
-       }
-       split; [blia| auto].
-     }
+     auto.
+   Qed.
+
+
+   Ltac repeat_loop_tac :=
+     match goal with
+     | |- WeakestPrecondition.cmd _ ?c _ _ ?l0 _ =>
+       unfold c, l0
+     end;
+     match goal with
+     | |- WeakestPrecondition.cmd _ (cmd.while (expr.var "i") ?c) _ _ _ _ =>
+       unfold c
+     end;
+     match goal with
+     | |- WeakestPrecondition.cmd _ (cmd.while _ (cmd.seq _ (cmd.store access_size.four ((_ + (expr.literal ?e)) - _) _))) _ _ (map.put _ _ (/_ ?n)) _ =>
+       let end_ := eval cbn in (e/4) in
+       let num_iter := eval cbn in (n/4) in 
+       eapply (spec_of_repeatLoop _ (end_) (num_iter));
+       [eassumption | repeat straightline | | | | |]; try ZnWords;
+       repeat straightline;
+       subst_words;
+       clear_unused
+     end.
+   
+   
+   Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" :=
+     fun functions => forall p_addr buf R m t,
+         ((array32 p_addr buf) * R) m ->
+         Z.of_nat (List.length buf) = 90 ->
+         WeakestPrecondition.call functions "createTimestampMessage" t m [p_addr]
+         (fun t' m' rets => t = t' /\ rets = nil /\ ((array32 p_addr (flatten message_entry)) * R) m').
+   
+
+   Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
+   Proof.
      repeat straightline.
-     clear H.
-     do 8 array_first_straightline'.
-     clear H7 H6 H5 H4 H3 H1 H0 H.
-     repeat straightline.
-     subst i.
-     subst_skipn.
-
-     remember ((p_addr ^+ /_ 132) |-> 16962 *
-        ((p_addr ^+ /_ 128) |-> 66 *
-         ((p_addr ^+ /_ 124) |-> Z_of_string "ROOT" *
-          ((p_addr ^+ /_ 120) |-> Z_of_string "MIDP" *
-           ((p_addr ^+ /_ 116) |-> Z_of_string "RADI" *
-            ((p_addr ^+ /_ 112) |-> 12 *
-             ((p_addr ^+ /_ 108) |-> 4 *
-              ((p_addr ^+ /_ 104) |-> 3 *
-               (P * array32 (p_addr ^+ /_ 40) (repeat (/_ (Ox "42")) 16)))))))))%type) as Q.
-     assert ((Q * array32 (p_addr ^+ /_ 136) buf) m7) by (rewrite HeqQ; ecancel_assumption).
-     clear H8.
-
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 64 - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 (p_addr ^+ (/_ 136)) (List.repeat (word.of_Z (Ox"42")) i) * array32 (p_addr ^+ (/_ (200 - V))) (List.skipn i buf) * Q * R) M) (fun t m i buff => t = T /\ buff = p_addr /\ (Q * array32 (p_addr ^+ /_ 136) (List.repeat (word.of_Z (Ox"42")) 16) * array32 (p_addr ^+ (/_ (200))) (List.skipn 16%nat buf) * R) m))) _ _ _ _ _ _ _);
-      cbn [reconstruct map.putmany_of_list HList.tuple.to_list
-           HList.hlist.foralls HList.tuple.foralls
-           HList.hlist.existss HList.tuple.existss
-           HList.hlist.apply  HList.tuple.apply
-           HList.hlist
-
-           (* List.repeat *) Datatypes.length
-           HList.polymorphic_list.repeat HList.polymorphic_list.length
-           PrimitivePair.pair._1 PrimitivePair.pair._2] in *.
-     { repeat straightline. }
-     { eapply (Z.lt_wf 0). }
-     { exists 0%nat.
-       split; [auto| split; [word_Z_unsigned; blia| split; [auto|] ] ] .
-       simpl (200 - _).
-       cbn [List.repeat Array.array List.skipn List.map].
-       ecancel_assumption. }
-     { repeat straightline.
-       2: {
-         split; try split; auto.
-         replace x3 with 16%nat in H0, H4 by blia.
-         simpl in H0.
-         rewrite H0 in *.
-         simpl (200-0) in H4.
-         ecancel_assumption. }
-       
-       subst_words.
-       word_simplify.
-       subst v.
-       repeat word_simplify_in H4.
-       word_Z_unsigned_in H4.
-       pose proof (word.unsigned_range x1).
-       assert (List.length (List.skipn x3 buf) <> 0%nat) by (rewrite List.skipn_length; blia).
-       destruct (List.skipn x3 buf) eqn:H17; try contradiction.
-       array_app_cons_sep.
-       repeat straightline.
-       subst_words.
-       eexists; eexists; split.
-       { exists (1 + x3)%nat.
-         replace (64 - 4 * Z.of_nat (1 + x3)) with (60 - 4 * Z.of_nat x3) by blia.
-         split; auto.
-         split; [|split; [auto|] ].
-         { rewrite word.unsigned_sub.
-           word_Z_unsigned.
-           word_unwrap (word.unsigned x1 - 4).
-           blia.
-         }
-         { pose proof (f_equal word.of_Z H0).
-           word_Z_unsigned_in H8.
-           rewrite H8 in H7.
-           cbn[Nat.add List.repeat].
-           rewrite repeat_cons.
-           array_app_cons_sep.
-           rewrite repeat_length, <- List.tl_skipn, H17.
-           cbn[List.tl].
-           repeat word_simplify.
-           repeat word_simplify_in H7.
-           change (66) with (Ox "42") in H7.
-           ecancel_assumption. }
-       }
-       split; [blia| auto].
-     }
-     repeat straightline.
-     clear H.
-     do 4 array_first_straightline'.
-     clear H3 H2 H0 H.
-     repeat straightline.
-     subst i.
-     subst_skipn.
-
-     remember ((p_addr ^+ /_ 212) |-> Z_of_string "DELE" *
-        ((p_addr ^+ /_ 208) |-> Z_of_string "SIG" *
-         ((p_addr ^+ /_ 204) |-> 64 *
-          ((p_addr ^+ /_ 200) |-> 2 *
-           (Q * array32 (p_addr ^+ /_ 136) (repeat (/_ (Ox "42")) 16)))))) as P1.
-     assert ((P1 * array32 (p_addr ^+ /_ 216) buf) m3) by (rewrite HeqP1; ecancel_assumption).
-     clear H4.
-
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 64 - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 (p_addr ^+ (/_ 216)) (List.repeat (word.of_Z (Ox"42")) i) * array32 (p_addr ^+ (/_ (280 - V))) (List.skipn i buf) * P1 * R) M) (fun t m i buff => t = T /\ buff = p_addr /\ (P1 * array32 (p_addr ^+ /_ 216) (List.repeat (word.of_Z (Ox"42")) 16) * array32 (p_addr ^+ (/_ (280))) (List.skipn 16%nat buf) * R) m))) _ _ _ _ _ _ _);
-      cbn [reconstruct map.putmany_of_list HList.tuple.to_list
-           HList.hlist.foralls HList.tuple.foralls
-           HList.hlist.existss HList.tuple.existss
-           HList.hlist.apply  HList.tuple.apply
-           HList.hlist
-
-           (* List.repeat *) Datatypes.length
-           HList.polymorphic_list.repeat HList.polymorphic_list.length
-           PrimitivePair.pair._1 PrimitivePair.pair._2] in *.
-     { repeat straightline. }
-     { eapply (Z.lt_wf 0). }
-     { exists 0%nat.
-       split; [auto| split; [word_Z_unsigned; blia| split; [auto|] ] ] .
-       simpl (280 - _).
-       cbn [List.repeat Array.array List.skipn List.map].
-       ecancel_assumption. }
-     { repeat straightline.
-       2: {
-         split; try split; auto.
-         replace x4 with 16%nat in H0, H4 by blia.
-         simpl in H0.
-         rewrite H0 in *.
-         simpl (280-0) in H4.
-         ecancel_assumption. }
-       
-       subst_words.
-       word_simplify.
-       subst v.
-       repeat word_simplify_in H4.
-       word_Z_unsigned_in H4.
-       pose proof (word.unsigned_range x2).
-       assert (List.length (List.skipn x4 buf) <> 0%nat) by (rewrite List.skipn_length; blia).
-       destruct (List.skipn x4 buf) eqn:H17; try contradiction.
-       array_app_cons_sep.
-       repeat straightline.
-       subst_words.
-       eexists; eexists; split.
-       { exists (1 + x4)%nat.
-         replace (64 - 4 * Z.of_nat (1 + x4)) with (60 - 4 * Z.of_nat x4) by blia.
-         split; auto.
-         split; [|split; [auto|] ].
-         { rewrite word.unsigned_sub.
-           word_Z_unsigned.
-           word_unwrap (word.unsigned x2 - 4).
-           blia.
-         }
-         { pose proof (f_equal word.of_Z H0).
-           word_Z_unsigned_in H8.
-           rewrite H8 in H7.
-           cbn[Nat.add List.repeat].
-           rewrite repeat_cons.
-           array_app_cons_sep.
-           rewrite repeat_length, <- List.tl_skipn, H17.
-           cbn[List.tl].
-           repeat word_simplify.
-           repeat word_simplify_in H7.
-           change (66) with (Ox "42") in H7.
-           ecancel_assumption. }
-       }
-       split; [blia| auto].
-     }
-     repeat straightline.
-     clear H.
-     do 6 array_first_straightline'.
-     clear H5 H4 H3 H1 H0 H.
-     repeat straightline.
-     subst i.
-     subst_skipn.
-
-     remember ((p_addr ^+ /_ 300) |-> Z_of_string "MAXT" *
-        ((p_addr ^+ /_ 296) |-> Z_of_string "MINT" *
-         ((p_addr ^+ /_ 292) |-> Z_of_string "PUBK" *
-          ((p_addr ^+ /_ 288) |-> 40 *
-           ((p_addr ^+ /_ 284) |-> 32 *
-            ((p_addr ^+ /_ 280) |-> 3 *
-             (P1 * array32 (p_addr ^+ /_ 216) (repeat (/_ (Ox "42")) 16)))))))%type) as P2.
-     assert ((P2 * array32 (p_addr ^+ /_ 304) buf) m5) by (rewrite HeqP2; ecancel_assumption).
-     clear H6.
+     repeat array_straightline.
      
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 48 - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 (p_addr ^+ (/_ 304)) (List.repeat (word.of_Z (Ox"42")) i) * array32 (p_addr ^+ (/_ (352 - V))) (List.skipn i buf) * P2 * R) M) (fun t m i buff => t = T /\ buff = p_addr /\ (P2 * array32 (p_addr ^+ /_ 304) (List.repeat (word.of_Z (Ox"42")) 12) * array32 (p_addr ^+ (/_ (352))) (List.skipn 12%nat buf) * R) m))) _ _ _ _ _ _ _);
-      cbn [reconstruct map.putmany_of_list HList.tuple.to_list
-           HList.hlist.foralls HList.tuple.foralls
-           HList.hlist.existss HList.tuple.existss
-           HList.hlist.apply  HList.tuple.apply
-           HList.hlist
+     repeat_loop_tac.
 
-           (* List.repeat *) Datatypes.length
-           HList.polymorphic_list.repeat HList.polymorphic_list.length
-           PrimitivePair.pair._1 PrimitivePair.pair._2] in *.
-     { repeat straightline. }
-     { eapply (Z.lt_wf 0). }
-     { exists 0%nat.
-       split; [auto| split; [word_Z_unsigned; blia| split; [auto|] ] ] .
-       simpl (352 - _).
-       cbn [List.repeat Array.array List.skipn List.map].
-       ecancel_assumption. }
-     { repeat straightline.
-       2: {
-         split; try split; auto.
-         replace x5 with 12%nat in H0, H4 by blia.
-         simpl in H0.
-         rewrite H0 in *.
-         simpl (352-0) in H4.
-         ecancel_assumption. }
-       
-       subst_words.
-       word_simplify.
-       subst v.
-       repeat word_simplify_in H4.
-       word_Z_unsigned_in H4.
-       pose proof (word.unsigned_range x3).
-       assert (List.length (List.skipn x5 buf) <> 0%nat) by (rewrite List.skipn_length; blia).
-       destruct (List.skipn x5 buf) eqn:H17; try contradiction.
-       array_app_cons_sep.
-       repeat straightline.
-       subst_words.
-       eexists; eexists; split.
-       { exists (1 + x5)%nat.
-         split; auto.
-         split; [|split; [auto|] ].
-         { rewrite word.unsigned_sub.
-           word_Z_unsigned.
-           word_unwrap (word.unsigned x3 - 4).
-           blia.
-         }
-         { pose proof (f_equal word.of_Z H0).
-           word_Z_unsigned_in H8.
-           rewrite H8 in H7.
-           cbn[Nat.add List.repeat].
-           rewrite repeat_cons.
-           array_app_cons_sep.
-           rewrite repeat_length, <- List.tl_skipn, H17.
-           cbn[List.tl].
-           replace (Z.of_nat (S x5)) with (1 + Z.of_nat x5) by blia. 
-           repeat word_simplify.
-           repeat word_simplify_in H7.
-           change (66) with (Ox "42") in H7.
-           ecancel_assumption. }
-       }
-       split; [blia| auto].
-     }
-     repeat straightline.
-     clear H.
-     array_first_straightline'.
-     clear H3.
-     straightline.
-     split; [auto| split; [auto| ] ].
-     subst P2 P1 Q P.
+     repeat array_straightline.
+     repeat_loop_tac.
 
-     unfold message_val, srep_val, cert_val, dele_val, message_ok.
-     unfold size_field, offsets_field, tags_field, tags_offset.
-     cbn[List.length tl map fst snd Array.array Z.of_nat].
-     simpl (Z.of_nat _).
-     unfold fold_left.
-     cbn[fst snd].
-     unfold repeat_dummy.
-     simpl (Z.pos _).
-     repeat word_simplify.
-     ecancel_assumption.
+     repeat array_straightline.
+     repeat_loop_tac.
+
+     repeat array_straightline.
+     repeat_loop_tac.
+
+     repeat array_straightline.
+     split; [auto |split; [auto|] ].
+
+     (* (List.length l = length buf) -> buf. [[0|==>l]] = l *)
+     rewrite List.upds_replace in H by ZnWords.
+     exact H.
+     
    Qed.
      (*
      remember 

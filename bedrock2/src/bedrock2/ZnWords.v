@@ -30,7 +30,7 @@ Ltac cleanup_for_ZModArith :=
 
 (* TODO improve *)
 Ltac simpl_list_length_exprs :=
-  rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?List.length_nil in *.
+  rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?List.length_nil, ?List.repeat_length in *.
 
 
 (* word laws for shifts where the shift amount is a Z instead of a word *)
