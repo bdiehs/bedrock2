@@ -20,7 +20,7 @@
 
 #include <openssl/curve25519.h>
 
-#include "c_code.h"
+#include "c_code2.h"
 #include "logging.h"
 // #include "message.h"
 #include "protocol.h"
@@ -135,7 +135,7 @@ bool Server::MakeResponse(uint8_t *out_response, size_t *out_len,
   //   ROUGHTIME_LOG(ERROR) << "failed to construct response";
   //   return false;
   // }
-  createTimestampMessage((uintptr_t) out_response);
+  createTimestampMessage((uintptr_t) out_response, (uintptr_t) signature_);
   
   // printf("Here: ");
   
