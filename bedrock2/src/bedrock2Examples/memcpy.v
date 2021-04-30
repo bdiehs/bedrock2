@@ -78,7 +78,7 @@ Section WithParameters.
         (preprocess [autorewrite with rew_word_morphism],
          morphism (Properties.word.ring_morph (word := Semantics.word)),
          constants [Properties.word_cst]).
-
+(*
  Global Instance spec_of_memcpy : spec_of "memcpy" :=
     fun functions => forall src_ptr dst_ptr src dst off1 off2 buf1 buf2 num R m t,
         src = src_ptr ^+ /_ (4 * Z.of_nat off1) ->
@@ -90,22 +90,22 @@ Section WithParameters.
         (array32 src_ptr buf1 * array32 dst_ptr buf2 * R) m ->
         WeakestPrecondition.call functions "memcpy" t m [dst; src; num]
         (fun t' m' rets => t = t' /\ rets = nil /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[off2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn off1 buf1)]]) * R) m').
-
+ *)
+ 
   Global Instance spec_of_memcpy : spec_of "memcpy" :=
-    fun functions => forall src_ptr dst_ptr src dst off1 off2 buf1 buf2 num R m t,
-        let off1 := \_ (src_ptr ^- src) in
-        off
-        let n1 := 
-        
-        src = src_ptr ^+ /_ (4 * Z.of_nat off1) ->
-        dst = dst_ptr ^+ /_ (4 * Z.of_nat off2) ->
-        4 * (Z.of_nat off1 + \_ num) < 2^width ->
-        4 * (Z.of_nat off2 + \_ num) < 2^width ->
-        Z.of_nat off1 + \_ num <= Z.of_nat (List.length buf1) ->
-        Z.of_nat off2 + \_ num <= Z.of_nat (List.length buf2) ->
+    fun functions => forall src_ptr dst_ptr src dst buf1 buf2 num R m t,
+        let off1 := \_ (src ^- src_ptr) in
+        let off2 := \_ (dst ^- dst_ptr) in
+        off1 mod 4 = 0 /\ off2 mod 4 = 0 ->
+        let n1 := Z.to_nat (off1 / 4) in
+        let n2 := Z.to_nat (off2 / 4) in
+        off1 + 4 * (\_ num) < 2^width ->
+        off2 + 4 * (\_ num) < 2^width ->
+        Z.of_nat n1 + \_ num <= Z.of_nat (List.length buf1) ->
+        Z.of_nat n2 + \_ num <= Z.of_nat (List.length buf2) ->
         (array32 src_ptr buf1 * array32 dst_ptr buf2 * R) m ->
         WeakestPrecondition.call functions "memcpy" t m [dst; src; num]
-        (fun t' m' rets => t = t' /\ rets = nil /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[off2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn off1 buf1)]]) * R) m').
+        (fun t' m' rets => t = t' /\ rets = nil /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[n2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn n1 buf1)]]) * R) m').
 
  
  (*
@@ -122,8 +122,7 @@ Section WithParameters.
   Lemma memcpy_ok : program_logic_goal_for_function! memcpy.
   Proof.
     repeat straightline.
-    subst src dst.
-    refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("src"::"dst"::"num"::"i"::nil)%list%string (fun V R T M SRC DST NUM I => PrimitivePair.pair.mk (exists j, V = 4 * \_ NUM - 4 * (Z.of_nat j) /\ V = word.unsigned I /\ SRC = src_ptr ^+ (/_ (4 * Z.of_nat off1)) /\ DST = dst_ptr ^+ (/_ (4 * Z.of_nat off2)) /\ NUM = num /\ (array32 src_ptr buf1 * array32 dst_ptr (List.upds buf2 off2 (List.firstn j (List.skipn off1 buf1))) * R) M) (fun t m src dst num i => t = T /\ i = /_ 0 /\ src = SRC /\ dst = DST /\ num = NUM /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[off2|==>List.firstn (Z.to_nat (\_ num)) (List.skipn off1 buf1)]]) * R) m))) _ _ _ _ _ _ _); cbn [reconstruct map.putmany_of_list HList.tuple.to_list
+    refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("src"::"dst"::"num"::"i"::nil)%list%string (fun V R T M SRC DST NUM I => PrimitivePair.pair.mk (exists j, V = 4 * \_ NUM - 4 * (Z.of_nat j) /\ V = word.unsigned I /\ SRC = src_ptr ^+ (/_ off1) /\ DST = dst_ptr ^+ (/_ off2) /\ NUM = num /\ (array32 src_ptr buf1 * array32 dst_ptr (List.upds buf2 n2 (List.firstn j (List.skipn n1 buf1))) * R) M) (fun t m src dst num i => t = T /\ i = /_ 0 /\ src = SRC /\ dst = DST /\ num = NUM /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[n2|==>List.firstn (Z.to_nat (\_ num)) (List.skipn n1 buf1)]]) * R) m))) _ _ _ _ _ _ _); cbn [reconstruct map.putmany_of_list HList.tuple.to_list
              HList.hlist.foralls HList.tuple.foralls
              HList.hlist.existss HList.tuple.existss
              HList.hlist.apply  HList.tuple.apply
@@ -135,7 +134,8 @@ Section WithParameters.
     { repeat straightline. }
     { eapply (Z.lt_wf 0). }
     { exists 0%nat.
-      split; [auto| split; [ZnWords| split; [|split]; [| |split]; auto ] ].
+      split; [auto| split]; [ZnWords| split; [|split; [|split] ] ].
+      1, 2, 3: ZnWords.
       cbn[List.firstn].
       rewrite List.upds_nil'.
       ecancel_assumption. }
@@ -144,8 +144,8 @@ Section WithParameters.
         split.
         { repeat straightline.
           eexists; split; [|reflexivity].
-          erewrite (array_load_four_of_sep_32bit' src_ptr);
-            [reflexivity | reflexivity | ecancel_assumption| ZnWords| ZnWords| ].
+          eapply (array_load_four_of_sep_32bit' src_ptr);
+            [ reflexivity | ecancel_assumption| ZnWords| ZnWords| ].
           word_Z_unsigned.
           ZnWords. }
         eapply (array_store_four_of_sep_32bit' dst_ptr);
@@ -157,18 +157,18 @@ Section WithParameters.
         eexists; eexists; split.
         { exists (S x4).
           split; [auto| split; [ZnWords| split; [|split]; [| |split]; auto] ].
-          replace (Z.to_nat (\_(src_ptr ^+ /_ (4 * Z.of_nat off1) ^+ (/_ 4 ^* num) ^- x3 ^- src_ptr) / 4)) with (off1 + x4)%nat in H6 by ZnWords.
-          replace (Z.to_nat (\_ (dst_ptr ^+ /_ (4 * Z.of_nat off2) ^+ (/_ 4 ^* num) ^- x3 ^- dst_ptr) / 4)) with (off2 + x4)%nat in H6 by ZnWords.
-          unfold List.upd in H6.
-          rewrite <-List.upds_app' in H6 by (rewrite firstn_length; ZnWords).
-          replace (nth (off1 + x4) buf1 (/_ 0)) with (nth x4 (List.skipn off1 buf1) (/_ 0)) in H6.
-          2:{ rewrite <-(List.firstn_skipn off1 buf1) at 2.
+          replace (Z.to_nat (\_(src_ptr ^+ /_ off1 ^+ (/_ 4 ^* num) ^- x3 ^- src_ptr) / 4)) with (n1 + x4)%nat in H8 by ZnWords.
+          replace (Z.to_nat (\_ (dst_ptr ^+ /_ off2 ^+ (/_ 4 ^* num) ^- x3 ^- dst_ptr) / 4)) with (n2 + x4)%nat in H8 by ZnWords.
+          unfold List.upd in H8.
+          rewrite <-List.upds_app' in H8 by (rewrite firstn_length; ZnWords).
+          replace (nth (n1 + x4) buf1 (/_ 0)) with (nth x4 (List.skipn n1 buf1) (/_ 0)) in H8.
+          2:{ rewrite <-(List.firstn_skipn n1 buf1) at 2.
               rewrite List.app_nth2, List.firstn_length, min_l.
               { f_equal; blia. }
               { ZnWords. }
               { rewrite List.firstn_length, min_l by ZnWords.
                 blia. } }
-          rewrite List.firstn_nth in H6 by ZnWords.
+          rewrite List.firstn_nth in H8 by ZnWords.
           ecancel_assumption. }
         split; [ZnWords|auto]. }
        split; [auto| split; [ZnWords| split; [|split]; [| |split]; auto] ].

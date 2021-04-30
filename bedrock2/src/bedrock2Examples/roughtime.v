@@ -426,14 +426,13 @@ Section WithParameters.
      (* Write ltac to return address given an address expression *)
      cbn[List.app] in H0.
      
-        
      
      try (straightline_call; [..|ecancel_assumption|]; [match goal with
         | |- ?a = ?b ^+ ?c =>
           match a with
-          | _ => idtac a b
+          | context[b] => idtac a b
           end
-        end |..]; fail).
+        end |..]).
      
 
      Ltac ecancel_step :=
