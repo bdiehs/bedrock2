@@ -26,13 +26,13 @@ Lemma stringHexBound : forall s, (length s <= 4)%nat -> 0 <= Z_of_string s < 2^3
 Proof.
   intros s.
 Admitted.
-(*
+
 Definition createSignedResponse :=
   let buffer := "buffer" in
   let time := "time" in
   let radius := "radius" in
   let root := "root" in
-  ("createSignedResponse", ([buffer; time; radius; root], []: list String.string, bedrock_func_body:(
+  ("createSignedResponse", ([buffer; radius; time; root], []: list String.string, bedrock_func_body:(
     store4(buffer + coq:(0), coq:(Ox"3"));
     store4(buffer + coq:(4), coq:(Ox"4"));
     store4(buffer + coq:(8), coq:(Ox"c"));
@@ -41,24 +41,20 @@ Definition createSignedResponse :=
     store4(buffer + coq:(16), coq:(Z_of_string "MIDP"));
     store4(buffer + coq:(20), coq:(Z_of_string "ROOT"));
     
-    memcpy(buffer + coq:(24), radius, coq:(1));
-    memcpy(buffer + coq:(28), radius, coq:(2));
-    memcpy(buffer + coq:(36), radius, coq:(16))))).
-
-
-*)
-
+    store4(buffer + coq:(24), radius);
+    memcpy(buffer + coq:(28), time, coq:(2));
+    memcpy(buffer + coq:(36), root, coq:(16))))).
 
 
 Definition createTimestampMessage :=
   let buffer := "buffer" in
   let sig := "sig" in
-  let time := "time" in
-  let radius := "radius" in
-  let root := "root" in
+  let srep := "srep" in
+  let indx := "indx" in
   let memcpy := "memcpy" in
+  let createSignedResponse := "createSignedResponse" in
   let i := "i" in
-  ("createTimestampMessage", ([buffer; sig; time; radius; root], []:list String.string, bedrock_func_body:(
+  ("createTimestampMessage", ([buffer; sig; srep; indx], []:list String.string, bedrock_func_body:(
     store4(buffer, coq:(Ox"5"));
     store4(buffer + coq:(4), coq:(Ox"40"));
     store4(buffer + coq:(8), coq:(Ox"40"));
@@ -72,21 +68,7 @@ Definition createTimestampMessage :=
     store4(buffer + coq:(36), coq:(Z_of_string "INDX"));
 
     memcpy(buffer + coq:(40), sig, coq:(16));
-
-    store4(buffer + coq:(104), coq:(Ox"3"));
-    store4(buffer + coq:(108), coq:(Ox"4"));
-    store4(buffer + coq:(112), coq:(Ox"c"));
-
-    store4(buffer + coq:(116), coq:(Z_of_string "RADI"));
-    store4(buffer + coq:(120), coq:(Z_of_string "MIDP"));
-    store4(buffer + coq:(124), coq:(Z_of_string "ROOT"));
-    
-    store4(buffer + coq:(128), coq:(Ox"42"));
-    store4(buffer + coq:(132), coq:(Ox"42"));
-    store4(buffer + coq:(136), coq:(Ox"42"));
-    i = (coq:(64)); while (i) { i = (i - coq:(4));
-      store4(buffer + coq:(200) - i, coq:(Ox"42"))
-    };
+    memcpy(buffer + coq:(104), srep, coq:(25));
 
     store4(buffer + coq:(204), coq:(Ox"2"));
     store4(buffer + coq:(208), coq:(Ox"40"));
@@ -112,13 +94,13 @@ Definition createTimestampMessage :=
     store4(buffer + coq:(344), coq:(Ox"42"));
     store4(buffer + coq:(348), coq:(Ox"42"));
     store4(buffer + coq:(352), coq:(Ox"42"));
-    store4(buffer + coq:(356), coq:(Ox"42"))))).
+    store4(buffer + coq:(356), indx)))).
 
 
 Require Import bedrock2.ToCString.
-Definition prog : string :=
-  Eval cbv in c_module [createTimestampMessage].
-(*Print prog. *)
+
+Definition c_code := Eval cbv in (c_module [memcpy; createSignedResponse; createTimestampMessage]).
+Print c_code.
 
 Require bedrock2.WeakestPrecondition.
 Require Import bedrock2.Semantics bedrock2.FE310CSemantics.
@@ -177,12 +159,19 @@ Section WithParameters.
     | val l => l
     end.
 
+  Lemma flatten_length (e : entry) : Z.of_nat (List.length (flatten e)) = size e.
+  Proof.
+  Admitted.
+      
   Definition repeat42 n : list Semantics.word := List.repeat (/_ (Ox"42")) n.
 
-  Definition srep_entry : entry :=
-    rec [("RADI", val [/_ (Ox"42")]);
-        ("MIDP", val [/_(Ox"42"); /_(Ox"42")]);
-        ("ROOT", val (repeat42 16))].
+  Definition to_list (value : Semantics.word) : list (Semantics.word).
+  Admitted.
+  
+  Definition srep_entry radi time root :=
+    rec [("RADI", radi);
+        ("MIDP", time);
+        ("ROOT", root)].
   
   Definition dele_entry : entry :=
     rec [("PUBK", val (repeat42 8));
@@ -193,10 +182,10 @@ Section WithParameters.
     rec [("SIG", val (repeat42 16));
         ("DELE", dele_entry)].
 
-  Definition message_entry sig_entry : entry :=
+  Definition message_entry sig_entry srep : entry :=
     rec [("SIG", sig_entry);
         ("PATH", val nil);
-        ("SREP", srep_entry);
+        ("SREP", srep);
         ("CERT", cert_entry);
         ("INDX", val [/_ (Ox"42")])].
 
@@ -247,18 +236,6 @@ Section WithParameters.
          let x := eval cbv in (Z.to_nat (a/4)) in change (Z.to_nat (a/4)) with x in H
        end
      end.
-   
-   Ltac array_straightline_before :=
-     match goal with
-     | x : ?p ?m |- @WeakestPrecondition.store _ Syntax.access_size.four ?m ?addr' ?v _ =>
-       match p with
-       | context [array32 ?addr ?xs] =>
-         eapply array_store_four_of_sep_32bit'; [reflexivity| ecancel_assumption |];
-         ring_simplify (addr' ^- addr);
-         word_Z_unsigned;
-         split; [try reflexivity; ZnWords | Z_to_nat_div; split; [repeat rewrite List.upds_length; ZnWords|] ]
-       end
-     end.
 
    Ltac upds_simpl_step :=
      match goal with
@@ -280,11 +257,6 @@ Section WithParameters.
        | H1 : (sep ?P ?Q) ?m |- context [?m] => clear-H0 H1
        end
      end.
-   
-   Ltac array_straightline_after :=
-     repeat straightline; subst_words; clear_unused; upds_simpl.
-   
-   Ltac array_straightline := array_straightline_before; array_straightline_after.
 
    Ltac simpl_list_length_exprs ::= repeat rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?@List.length_nil, ?List.repeat_length, ?List.upds_length in *.
 
@@ -295,23 +267,25 @@ Section WithParameters.
       store4(buffer + coq:((4 * end_)%Z) - i, coq:(Ox"42"))
     }).
    
-   Local Notation tupl := (fun a b c => {|
+   Local Notation tupl := (fun a b c d => {|
      PrimitivePair.pair._1 := a;
      PrimitivePair.pair._2 := {|
                            PrimitivePair.pair._1 := b;
                            PrimitivePair.pair._2 :=  {|
                                                      PrimitivePair.pair._1 := c;
-                                                     PrimitivePair.pair._2 := tt |} |} |} :  HList.tuple (Semantics.word) (3%nat)).
+                                                     PrimitivePair.pair._2 := {|
+                                                                               PrimitivePair.pair._1 := d;
+                                                                               PrimitivePair.pair._2 := tt |} |} |} |} :  HList.tuple (Semantics.word) (4%nat)).
    Lemma spec_of_repeatLoop :
-     forall functions end_ num_iter p_addr sig_addr buf l vs R m t (post : _->_->_->Prop),
+     forall functions end_ num_iter p_addr sig_addr srep_addr buf l vs R m t (post : _->_->_->Prop),
        ((array32 p_addr (buf.[[0 |==> vs]])) * R) m ->
-       enforce ["i";"buffer";"sig"] (tupl (/_ (4 * num_iter)%Z) p_addr sig_addr) l ->
+       enforce ["i";"buffer";"sig";"srep"] (tupl (/_ (4 * num_iter)%Z) p_addr sig_addr srep_addr) l ->
        0 <= num_iter -> (0 <= end_ < 2 ^ (width - 2)) -> (num_iter <= end_ < Z.of_nat (List.length buf)) -> (end_ = num_iter + Z.of_nat (List.length vs) - 1) ->
-       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"; "sig"] (tupl (/_ 0) p_addr sig_addr))) ->
+       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"; "sig"; "srep"] (tupl (/_ 0) p_addr sig_addr srep_addr))) ->
          WeakestPrecondition.cmd (WeakestPrecondition.call functions) (repeatLoop end_) t m l post.
    Proof.
      intros.
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ ( HList.polymorphic_list.nil)) ("i"::"buffer"::"sig"::nil)%list%string (fun V R T M I BUFFER SIG => PrimitivePair.pair.mk (exists i, V = 4 * num_iter - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ SIG = sig_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) i]]) * R) M) (fun t m i buff sig => t = T /\ i = /_ 0 /\ buff = p_addr /\ sig = sig_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) (Z.to_nat num_iter)]]) * R) m))) _ _ _ _ _ _ _);
+     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ ( HList.polymorphic_list.nil)) ("i"::"buffer"::"sig"::"srep"::nil)%list%string (fun V R T M I BUFFER SIG SREP => PrimitivePair.pair.mk (exists i, V = 4 * num_iter - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ SIG = sig_addr /\ SREP = srep_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) i]]) * R) M) (fun t m i buff sig srep => t = T /\ i = /_ 0 /\ buff = p_addr /\ sig = sig_addr /\ srep = srep_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) (Z.to_nat num_iter)]]) * R) m))) _ _ _ _ _ _ _);
        cbn [reconstruct map.putmany_of_list HList.tuple.to_list
              HList.hlist.foralls HList.tuple.foralls
              HList.hlist.existss HList.tuple.existss
@@ -324,7 +298,7 @@ Section WithParameters.
      { exact H0. }
        { eapply (Z.lt_wf 0). }
        { exists 0%nat.
-         split; [auto| split; [ZnWords| split; [auto| split; [auto|] ] ] ] .
+         split; [auto| split; [ZnWords| split; [auto| split; [auto|split; auto] ] ] ] .
          upds_simpl.
          cbn [List.repeat].
          rewrite app_nil_r.
@@ -336,17 +310,17 @@ Section WithParameters.
            split; [ZnWords| split; [ZnWords|] ].
            repeat straightline.
            eexists; eexists; split.
-           { exists (S x3)%nat.
-             split; [auto| split; [ZnWords|split; [auto|split; [auto|] ] ] ].
+           { exists (S x4)%nat.
+             split; [auto| split; [ZnWords|split; [auto|split; [auto|split; auto] ] ] ].
              upds_simpl.
              cbn[List.repeat].
              rewrite List.repeat_cons, List.app_assoc.
              ecancel_assumption. }
            split; [ZnWords|auto]. }
 
-         { split; try split; try split; try split; auto.
+         { split; try split; try split; try split; try split; auto.
            { ZnWords. }
-           replace x3 with (Z.to_nat num_iter) in H10 by blia.
+           replace x4 with (Z.to_nat num_iter) in H11 by blia.
            ecancel_assumption. } }
        repeat straightline.
      auto.
@@ -372,18 +346,31 @@ Section WithParameters.
        subst_words;
        clear_unused
      end.
+
+   Instance spec_of_createSignedResponse : spec_of "createSignedResponse" :=
+     fun functions => forall buf_addr buf_data radius time_addr time_data root_addr root_data R m t,
+         (array32 buf_addr buf_data * array32 root_addr root_data * array32 time_addr time_data * R) m ->
+         List.length buf_data = Z.to_nat 25 ->
+         List.length time_data = Z.to_nat 2 ->
+         List.length root_data = Z.to_nat 16 ->
+         WeakestPrecondition.call functions "createSignedResponse" t m [buf_addr; radius; time_addr; root_addr]
+           (fun t' m' rets => t = t' /\ rets = nil /\
+              (array32 buf_addr (flatten (srep_entry (val [radius]) (val time_data) (val root_data))) * array32 root_addr root_data * array32 time_addr time_data * R) m').
    
    Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" :=
-     fun functions => forall buf_addr sig_addr buf_data sig_data R m t,
-         (array32 buf_addr buf_data * array32 sig_addr sig_data * R) m ->
+     fun functions => forall srep srep_addr buf_addr sig_addr buf_data sig_data R m t,
+         (array32 buf_addr buf_data *
+          array32 sig_addr sig_data *
+          array32 srep_addr (flatten srep) * R) m ->
          List.length buf_data = Z.to_nat 90 ->
          List.length sig_data = Z.to_nat 16 ->
-         WeakestPrecondition.call functions "createTimestampMessage" t m [buf_addr; sig_addr]
+         List.length (flatten srep) = Z.to_nat 25 ->         
+         WeakestPrecondition.call functions "createTimestampMessage" t m [buf_addr; sig_addr; srep_addr]
          (fun t' m' rets => t = t' /\ rets = nil /\
-           (array32 buf_addr (flatten (message_entry (val sig_data))) * array32 sig_addr sig_data * R) m').
+           (array32 buf_addr (flatten (message_entry (val sig_data) srep)) * array32 sig_addr sig_data * array32 srep_addr (flatten srep) * R) m').
    
    
-   Ltac array_straightline_before ::=
+   Ltac array_straightline_before :=
      match goal with
      | x:?p ?m
        |- WeakestPrecondition.store access_size.four ?m (?addr ^+ ?off) ?v _ =>
@@ -421,30 +408,11 @@ Section WithParameters.
        end
      end.
    
-   Ltac array_straightline_after ::=
+   Ltac array_straightline_after :=
      repeat straightline; subst_words; clear_unused; upds_simpl.
 
-
-   Lemma array_step_ok : (forall buf buf' pref i buf_data v R m (post : _ -> Prop),
-                4 * Z.of_nat i < 2 ^ width ->
-                i = List.length pref ->
-                (i < List.length buf_data)%nat ->
-                buf' = buf ^+ /_ ((Z.of_nat i) * 4) ->
-                (array32 buf (pref ++ List.skipn i buf_data) * R) m ->
-                (forall m, (array32 buf ((pref++[v]) ++ List.skipn (S i) buf_data) * R) m -> post m) ->
-                WeakestPrecondition.store access_size.four m buf' v post).
-     { intros.
-       eapply (array_store_four_of_sep_32bit' buf);
-         [reflexivity| ecancel_assumption| word_Z_unsigned; blia |].
-       replace (\_ (buf' ^- buf)) with ((Z.of_nat i) *4)%Z by ZnWords.
-       subst i.
-       word_Z_unsigned.
-       split; [ZnWords|].
-       rewrite Z.div_mul, Nat2Z.id by blia.
-       split; [ZnWords|].
-       rewrite List.upd_S_skipn; auto. }
-   Qed.  
-
+   Ltac array_straightline := array_straightline_before; array_straightline_after.
+   
    Ltac simpl_div4 :=
        match goal with
        | H : context [ (\_ ?e / 4)] |- _ =>
@@ -452,30 +420,60 @@ Section WithParameters.
        end.
 
      
-     Ltac memcpy_call :=
-       straightline_call; [split; [| ecancel_assumption];
-         match goal with
-         | |- \_ (?a ^- ?b) mod _ = 0 /\ ?P =>
-           match a with
-           | context[b] => ring_simplify (a ^- b)
-           end;
-             match P with
-             | \_ (?c ^- ?d) mod _ = 0 /\ _ =>
-               ring_simplify (c ^- d)
-             end
-         end;
-       repeat word_Z_unsigned;
-       repeat split; ZnWords| repeat straightline; clear_unused; word_Z_unsigned; repeat simpl_div4; upds_simpl].
+   Ltac memcpy_call :=
+     straightline_call;
+     [split; [| ecancel_assumption];
+      match goal with
+      | |- \_ (?a ^- ?b) mod _ = 0 /\ ?P =>
+        match a with
+        | context[b] => ring_simplify (a ^- b)
+        end;
+        match P with
+        | \_ (?c ^- ?d) mod _ = 0 /\ _ =>
+          ring_simplify (c ^- d)
+        end
+      end;
+      repeat word_Z_unsigned;
+      repeat split; ZnWords| repeat straightline; clear_unused; word_Z_unsigned; repeat simpl_div4; upds_simpl].
    
+     
+   Lemma createSignedResponse_ok : program_logic_goal_for_function! createSignedResponse.
+   Proof.
+     repeat straightline.
+     subst_words.
+     repeat array_straightline.
+     memcpy_call.
+     memcpy_call.
+     split; try split; auto.
+
+     cbn[List.app] in H6.
+     rewrite ?List.skipn_O, ?List.firstn_all2 in H6 by blia.
+     rewrite List.upds_replace in H6 by ZnWords.
+     
+     use_sep_assumption.
+     cancel.
+     cancel_seps_at_indices 0%nat 0%nat.
+     { f_equal.
+       cbn-[semantics_parameters].
+       rewrite H3.
+       simpl (Z.of_nat _).
+       cbn.
+       rewrite List.app_nil_r.
+       reflexivity. }
+     reflexivity.
+   Qed.
+
+     
    Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
    Proof.
      repeat straightline.
      repeat array_straightline.
      (* Write ltac to return address given an address expression *)
-     cbn[List.app] in H0.
+     cbn[List.app] in H1.
      memcpy_call.
-     clear_unused.
-     rewrite List.skipn_O in H5.
+     rewrite List.skipn_O in H7.
+     subst_words.
+     memcpy_call.
      subst_words.
 
      repeat array_straightline.
@@ -483,505 +481,28 @@ Section WithParameters.
      repeat array_straightline.
      repeat_loop_tac.
      repeat array_straightline.
-     repeat_loop_tac.
-     repeat array_straightline.
-     
      split; auto; split; auto.
 
-     rewrite List.upds_replace in H0 by ZnWords.
-     cbn[List.app] in H0.
+     rewrite List.upds_replace in H1 by ZnWords.
+     cbn[List.app] in H1.
 
      use_sep_assumption.
      cancel.
      cancel_seps_at_indices 0%nat 0%nat.
      { f_equal.
-       cbn.
-       simpl in H2.
-       rewrite H2.
+       cbn-[semantics_parameters].
+       rewrite H3, <-flatten_length, H4.
        simpl (Z.of_nat _).
-       rewrite List.firstn_all2 by blia.
+       rewrite ?List.firstn_all2 by blia.
        simpl repeat.
        rewrite <-?List.app_assoc.
        reflexivity. }
      reflexivity.
    Qed.
+
    
 
-     
-     
-     cbn-[Array.array Z.of_nat List.repeat].
-     
-     replace (Datatypes.length sig_data) with 16%nat.
-     rewrite H3.
-     ecancel_assumption.
-     
-     Ltac ecancel_step :=
-      let RHS := lazymatch goal with |- Lift1Prop.iff1 _ (seps ?RHS) => RHS end in
-      let jy := index_and_element_of RHS in (* <-- multi-success! *)
-      let j := lazymatch jy with (?i, _) => i end in
-      let y := lazymatch jy with (_, ?y) => y end in
-      assert_fails (idtac; let y := rdelta_var y in is_evar y);
-      let LHS := lazymatch goal with |- Lift1Prop.iff1 (seps ?LHS) _ => LHS end in
-      let i := find_syntactic_unify_deltavar LHS y in (* <-- multi-success! *)
-      cancel_seps_at_indices i j; [syntactic_exact_deltavar (@eq_refl _ _)|].
-
-      *)
-     straightline_call.
-     7:{ 
-
-       rewrite (iff1ToEq (sep_comm (array32 _ _) _)).
-         ecancel_assumption. }
-     { 
-       instantiate (1 := 0%nat).
-       ring. }
-     { match goal with
-       | |- 
-       instantiate (1 := 10%nat).
-       ring. }
-     1, 2, 3, 4: ZnWords.
-     repeat straightline.
-     word_Z_unsigned.
-     upds_simpl.
-     rewrite List.skipn_O in H6.
-     subst_words.
-     repeat array_straightline.
-
-     rewrite <-List.upds_app' in H4.
-     2:{ simpl_list_length_exprs.
-         rewrite min_l.
-         { reflexivity. }
-         { ZnWords. } }
-         simpl.
-     upds_simpl.
-     eapply (spec_of_repeatLoop _ 50 16).
-     { eassumption.
-      
-     
-     
-     match goal with
-  | x:?p ?m
-    |- WeakestPrecondition.store access_size.four ?m (?addr ^+ ?off) ?v _ =>
-        match p with
-        | context [ array32 addr ?xs ] =>
-            eapply array_store_four_of_sep_32bit';
-             [ reflexivity | ecancel_assumption | word_Z_unsigned; blia |  ];
-             ring_simplify addr ^+ off ^- addr; repeat word_Z_unsigned; split;
-             [ try reflexivity; ZnWords | Z_to_nat_div; split; [ ZnWords |  ] ]
-        end
-  | x:?p ?m
-    |- WeakestPrecondition.store access_size.four ?m ?addr ?v _ =>
-        match p with
-        | context [ array32 addr ?xs ] =>
-            eapply array_store_four_of_sep_32bit';
-             [ reflexivity | ecancel_assumption | word_Z_unsigned; blia |  ];
-             ring_simplify addr ^- addr; repeat word_Z_unsigned; split;
-             [ try reflexivity; ZnWords | Z_to_nat_div; split; [ ZnWords |  ] ]
-        end
-  end
-     
-     array_straightline.
-     
-     
-     
-       instantiate (1 := firstn ((buf ^+ 40 ^- buf) / 4) buf_data.[[updated]])
-       use_sep_assumption.
-       cancel.
-       Ltac pick_nat n :=
-       multimatch n with
-       | S ?m => idtac m; constr:(m)
-       | S ?m => idtac m; pick_nat m
-       end.
-       
-       Ltac find_context_in_list xs y :=
-         multimatch xs with
-         | ?x :: _ => match x with
-                    | context [y] => constr:(0%nat)
-                    | _ => fail
-                    end
-         | _ :: ?xs => let i := find_context_in_list xs y in
-                     constr:(S i)
-         end.
-
-       let LHS := lazymatch goal with
-                  | |- iff1 (seps ?LHS) _ => LHS
-                  end in
-       let RHS := lazymatch goal with
-                  | |- iff1 _ (seps ?RHS) => RHS
-                  end in
-       let iy := index_and_element_of LHS in
-       let i := match iy with | (?i, _) => i end in
-       let addr := match iy with | (_, array32 ?addr _) => addr end in 
-       let j := find_context_in_list RHS buf in idtac j.
-       cancel_seps_at_indices 0%nat 1%nat.
-       let idk := find_context_in_list RHS buf in
-       idtac idk.
-       
-       let LHS := lazymatch goal with
-             | |- iff1 (seps ?LHS) _ => LHS
-             end in
-       let iy := index_and_element_of LHS in idtac iy.
-       let idk := find_context_in_list 
-                      
-       let r := (pick_nat S%nat) in idtac r.
-     
-       
-       match goal with
-       | H: ?p ?m |- ?q ?m =>
-         match p with
-         | context [array32 ]
-
-       is_var buf.
-       is_const List.length.
-       is_var l.
-       assert (i : Semantics.word) by admit.
-       replace (/_40) with (/_40 ^+ i) by admit.
-       ring_simplify (buf ^+ (/_ 40 ^+ i)).
-
-       (* if separation logic preds in hypotheses are fully merged then addresses are just variables *)
-       
-       
-       use_sep_assumption.
-       cancel.
-       cancel_seps_at_indices 1%nat 0%nat.
-       1: reflexivity.
-       admit. }
-
-     4:{
-       repeat straightline.
-       
-       Search sep List.skipn List.firstn.
-     
-     rewrite List.upds_0_skipn in H0 by ZnWords.
-     cbn[List.length] in H0.
-     rewrite (iff1ToEq (array_append _ _ _ _ _)) in H0 by ZnWords; cbn[List.length] in H0; word_Z_unsigned.
-     ring_simplify (4 * Z.of_nat 10)%Z in H0.
-     straightline_call. 4:{
-     4: ecancel_assumption.
-     1, 2, 3: word_Z_unsigned; ZnWords.
-     repeat straightline.
-     repeat clear_unused.
-     word_Z_unsigned_in H6.
-     rewrite List.firstn_all2 in H6 by blia.
-     change (/_ 40) with (/_ (4 * 10)) in H6.
-
-     assert ((array32 buf (buf_data.[[0|==> [/_ 5; /_ 64; /_ 64; /_ 164; /_ 316; /_ 4671827; /_ 1213481296; /_ 1346720339; /_ 1414677827; /_ 1480871497] ++ sig_data]]) * array32 sig sig_data * R) a0).
-     { rewrite List.upds_0_skipn by ZnWords.
-       rewrite List.app_length.
-       cbn[List.length].
-       rewrite (iff1ToEq (array_append _ _ _ _ _)), List.app_length by ZnWords.
-       cbn[List.length].
-       word_Z_unsigned.
-       unfold List.upds in H6.
-       rewrite List.firstn_O, Nat.sub_0_r, Nat.add_0_r, List.skipn_length, List.firstn_all2, List.skipn_skipn, List.app_nil_l in H6 by blia.
-       rewrite (iff1ToEq (array_append _ _ _ _ _)) in H6.
-       word_Z_unsigned_in H6.
-       ring_simplify (buf ^+ /_ (4 * 10) ^+ /_ (4 * Z.of_nat (Datatypes.length sig_data))) in H6.
-       rewrite Nat2Z.inj_add.
-       ring_simplify (buf ^+ /_ (4 * (Z.of_nat 10 + Z.of_nat (Datatypes.length sig_data)))).
-       rewrite Nat.add_comm.
-       rewrite (iff1ToEq (array_append _ _ _ _ _)).
-       word_Z_unsigned.
-       cbn[List.length].
-       change (Z.of_nat 10) with 10.
-       ring_simplify (buf ^+ /_ (4 * 10)).
-       ring_simplify (buf ^+ (/_ 4 ^* /_ 10)) in H6.
-       ecancel_assumption. }
-     clear H6.
-
-     subst_words.
-     repeat array_straightline.
-     rewrite <-List.upds_app2 in H4.
-     2:{  simpl_list_length_exprs. setoid_rewrite List.length_nil. blia. }
-     
-     eapply (spec_of_repeatLoop _ 50 16).
-     1:eassumption.
-     { repeat straightline. }
-     
-     
-     match goal with
-     | x:?p ?m
-       |- WeakestPrecondition.store access_size.four ?m (?addr ^+ ?off) ?v _ =>
-       match p with
-       | context [ array32 addr ?xs ] =>
-         eapply array_store_four_of_sep_32bit';
-           [ reflexivity | ecancel_assumption | word_Z_unsigned; try blia |  ];
-           ring_simplify (addr ^+ off ^- addr); repeat word_Z_unsigned; split;
-             [ try reflexivity; ZnWords | Z_to_nat_div; split; [ ZnWords |  ] ]
-       end
-     end.
-     
-     array_straightline_before.
-     
-     repeat array_straightline.
-       
-
-     change buf_data with ([] ++ (List.skipn 0 buf_data)) in H0.
-
-     Local Ltac idk :=
-       eapply array_step_ok; [| | | | ecancel_assumption|]; [ZnWords|reflexivity | blia| try reflexivity; ZnWords|];
-       repeat straightline;
-       repeat clear_unused;
-       subst_words.
-     repeat idk.
-
-     
-     cbn[List.app] in H0.
-     
-     eapply array_step; [| | | | ecancel_assumption|];
-       [ZnWords|reflexivity |blia |reflexivity |].
-     4:{ reflexivity.
-     1: ZnWords.
-     1: reflexivity.
-     1: blia.
-     1:{ reflexivity. ZnWords_pre. reflexivity. ZnWords.
-     idk.
-     idk.
-     idk.
-     
-     
-     { ZnWords.
-       
-       word_Z_unsigned.
-       rewrite (word.unsigned_of_Z (4 * Z.of_nat i)).
-       unfold word.wrap.
-       rewrite (Z.mod_small (4 * Z.of_nat i)).
-       replace (word.wrap (4 * Z.of_nat i)) with (4 * Z.of_nat i).
-       
-         ring_simplify ( (buf ^+ /_ (4 * (Z.of_nat i))) ^- buf0); repeat word_Z_unsigned.
-           split; [try reflexivity; ZnWords|Z_to_nat_div; split; [ZnWords|] ].
-       
-       
-
-     Ltac idk :=
-       match goal with
-       | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-         match P with
-         | context [array32 ?addr ?xs] =>
-           eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-           split; [try reflexivity; ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-         end
-       end; rewrite upd_S_skipn; [|reflexivity|blia]; repeat straightline; subst_words; repeat clear_unused.
-     Set Ltac Profiling.
-     cbn[List.app List.skipn] in H0.
-     repeat array_straightline.
-     Show Ltac Profile.
-     idk.
-     
-     Ltac idk :=
-       match goal with
-       | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-         match P with
-         | context [array32 ?addr ?xs] =>
-           eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-           split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-         end
-       end; repeat straightline; subst_words; repeat clear_unused;
-       match goal with
-       | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-         match P with
-         | context [array32 ?addr ?xs] =>
-           try (rewrite List.upd_0_skipn in H by ZnWords);
-           try (rewrite List.upd_S_skipn in H; [|reflexivity| ZnWords])
-         end
-       end.
-     Set Ltac Profiling.
-     repeat array_straightline.
-     Show Ltac Profile.
-
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-             split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-       end
-     end.
-     repeat straightline.
-     subst_words.
-     repeat clear_unused.
-     rewrite List.upd_0_skipn in H4 by ZnWords.
-
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-             split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-       end
-     end.
-     repeat straightline.
-     subst_words.
-     repeat clear_unused.
-     rewrite List.upd_S_skipn in H0; [|reflexivity| ZnWords].
-
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-             split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-       end
-     end.
-     repeat straightline.
-     subst_words.
-     repeat clear_unused.
-     rewrite List.upd_S_skipn in H4; [|reflexivity| ZnWords].
-     
-     Ltac idk :=
-       match goal with
-       | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-         match P with
-         | context [array32 ?addr ?xs] =>
-           eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-           split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-         end
-       end; repeat straightline; subst_words; repeat clear_unused;
-       match goal with
-       | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-         match P with
-         | context [array32 ?addr ?xs] =>
-           tryif rewrite List.upd_0_skipn in H then idtac else
-             rewrite List.upd_S_skipn in H; [|reflexivity| ZnWords]
-         end
-       end.
-     idk.
-       
-       
-     
-     
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 ?addr ?xs] =>
-         eapply (array_store_four_of_sep_32bit' addr);
-           [reflexivity| ecancel_assumption| word_Z_unsigned; blia |];
-           ring_simplify (addr' ^- addr); repeat word_Z_unsigned;
-             split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ]
-       end
-     end.
-     repeat straightline.
-     subst_words.
-
-     eapply (array_store_four_of_sep_32bit' buf);
-       [reflexivity| ecancel_assumption| word_Z_unsigned; blia|].
-     ring_simplify  (buf ^+ /_ 4 ^- buf). repeat word_Z_unsigned.
-     split; [ZnWords|Z_to_nat_div; split; [|] ].
-     { rewrite List.upd_length.
-       blia. }
-     repeat straightline.
-     subst_words.
-     repeat clear_unused.
-     
-     
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 ?addr ?xs] =>
-         tryif rewrite List.upd_0_skipn in H by ZnWords then idtac else rewrite List.upd_S_skipn in H by ZnWords
-       end
-     end.
-
-     eapply (array_store_four_of_sep_32bit' buf);
-       [reflexivity| | |].
-     
-     
-     rewrite (iff1ToEq (array_append' _ _ _ _ _)) in H4.
-     cbn[List.length] in H4.
-     match goal with
-     | H : ?P ?m |- WeakestPrecondition.store access_size.four ?m ?addr' _ _ =>
-       match P with
-       | context [array32 (?addr ^+ ?off) ?xs] => ring_simplify (addr ^+ off) in H
-       end
-     end.
-     
-     
-     
-     change buf_data with (nil ++ (List.skipn 0 buf_data)) in H0.
-     
-     subst_words.
-     eapply (array_store_four_of_sep_32bit' buf);
-       [reflexivity| ecancel_assumption| word_Z_unsigned; blia |].
-     ring_simplify (buf ^- buf); repeat word_Z_unsigned.
-     split. { ZnWords_pre.
-     split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ].
-     repeat straightline.
-     repeat clear_unused.
-     
-     rewrite upd_S_skipn in H4; [|reflexivity|ZnWords].
-
-     array_straightline_before.
-     repeat straightline.
-     
-     unfold List.upd in H4.
-     rewrite List.upds_skipn in H4 by ZnWords.
-     cbn[List.app List.length] in H4.
-
-     subst_words.
-     eapply (array_store_four_of_sep_32bit' buf);
-       [reflexivity| ecancel_assumption| word_Z_unsigned; blia |].
-     ring_simplify (buf ^+ /_ 4 ^- buf); repeat word_Z_unsigned.
-     split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ].
-     repeat straightline.
-     repeat clear_unused.
-     change (/_ 5::List.skipn 1 buf_data) with ([/_ 5]++List.skipn 1 buf_data) in H5.
-     rewrite upd_S_skipn in H5; [|reflexivity|ZnWords].
-
-     
-     
-     subst_words.
-     eapply (array_store_four_of_sep_32bit' buf);
-       [reflexivity| ecancel_assumption| word_Z_unsigned; blia |].
-     ring_simplify (buf ^+ /_ 8 ^- buf); repeat word_Z_unsigned.
-     split; [ZnWords|Z_to_nat_div; split; [ZnWords|] ].
-     repeat straightline.
-     repeat clear_unused.
-     rewrite upd_S_skipn in H0; [|reflexivity|ZnWords].
-     
-
-     unfold List.upd in H5.
-     rewrite List.upds_skipn in H5 by ZnWords.
-
-     
-     repeat array_straightline.
-
-     cbn[List.app List.length] in H4.
-     
-     (*
-forall functions end_ num_iter p_addr buf l vs R m t (post : _->_->_->Prop),
-       ((array32 p_addr (buf.[[0 |==> vs]])) * R) m ->
-       enforce ["i";"buffer"] (tupl (/_ (4 * num_iter)%Z) p_addr) l ->
-       0 <= num_iter -> (0 <= end_ < 2 ^ (width - 2)) -> (num_iter <= end_ < Z.of_nat (List.length buf)) -> (end_ = num_iter + Z.of_nat (List.length vs) - 1) ->
-       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"] (tupl (/_ 0) p_addr))) ->
-         WeakestPrecondition.cmd (WeakestPrecondition.call functions) (repeatLoop end_) t m l post.
-*)
-
-     assert (forall buf buf_data xs R t m post,
-                (array32 buf (List.upds buf_data 0%nat xs) * R) m ->
-                
-                WeakestPrecondition.call functions "memcpy" t m args post).
-
-     straightline_call; repeat word_Z_unsigned.
-     4:{
-     
-     
-     straightline_call; repeat word_Z_unsigned
-       ;[| | | array_ecancel_assumption|].
-     1, 2, 3: ZnWords.
-     repeat straightline.
-     
-     
+          
      repeat array_straightline.
      
      4:{ ecancel_assumption.
