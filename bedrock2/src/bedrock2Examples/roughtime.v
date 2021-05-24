@@ -26,14 +26,39 @@ Lemma stringHexBound : forall s, (length s <= 4)%nat -> 0 <= Z_of_string s < 2^3
 Proof.
   intros s.
 Admitted.
+(*
+Definition createSignedResponse :=
+  let buffer := "buffer" in
+  let time := "time" in
+  let radius := "radius" in
+  let root := "root" in
+  ("createSignedResponse", ([buffer; time; radius; root], []: list String.string, bedrock_func_body:(
+    store4(buffer + coq:(0), coq:(Ox"3"));
+    store4(buffer + coq:(4), coq:(Ox"4"));
+    store4(buffer + coq:(8), coq:(Ox"c"));
+
+    store4(buffer + coq:(12), coq:(Z_of_string "RADI"));
+    store4(buffer + coq:(16), coq:(Z_of_string "MIDP"));
+    store4(buffer + coq:(20), coq:(Z_of_string "ROOT"));
+    
+    memcpy(buffer + coq:(24), radius, coq:(1));
+    memcpy(buffer + coq:(28), radius, coq:(2));
+    memcpy(buffer + coq:(36), radius, coq:(16))))).
+
+
+*)
+
 
 
 Definition createTimestampMessage :=
   let buffer := "buffer" in
   let sig := "sig" in
+  let time := "time" in
+  let radius := "radius" in
+  let root := "root" in
   let memcpy := "memcpy" in
   let i := "i" in
-  ("createTimestampMessage", ([buffer; sig], []:list String.string, bedrock_func_body:(
+  ("createTimestampMessage", ([buffer; sig; time; radius; root], []:list String.string, bedrock_func_body:(
     store4(buffer, coq:(Ox"5"));
     store4(buffer + coq:(4), coq:(Ox"40"));
     store4(buffer + coq:(8), coq:(Ox"40"));
@@ -93,7 +118,7 @@ Definition createTimestampMessage :=
 Require Import bedrock2.ToCString.
 Definition prog : string :=
   Eval cbv in c_module [createTimestampMessage].
-Print prog.
+(*Print prog. *)
 
 Require bedrock2.WeakestPrecondition.
 Require Import bedrock2.Semantics bedrock2.FE310CSemantics.
@@ -122,20 +147,17 @@ Section WithParameters.
                                           or bigger angle: let a word fly into the large Z space *)
   
   Notation array32 := (array scalar32 (word.of_Z 4)).
-  
-  Definition stringToWord (s : string) := word.of_Z (Z_of_string s).
+
+  Definition stringToWord s : Semantics.word := word.of_Z (Z_of_string s).
   
   Inductive entry :=
   | rec : list (prod string entry) -> entry
-  | val : (prod Z (list Semantics.word -> Prop)) -> entry.  
-
-  Definition header_size (l: list (prod string entry)) : Z :=
-    (Z.of_nat (1 + (2 * List.length l - 1))%nat).
+  | val : list (Semantics.word) -> entry.
 
   Fixpoint size (e : entry) : Z :=
     match e with
-    | rec l => header_size l + fold_left (fun n e' => n + size (snd e')) l 0
-    | val (n, _) => n
+    | rec l => (Z.of_nat (1 + (2 * List.length l - 1))%nat) + fold_left (fun n e' => n + size (snd e')) l 0
+    | val l => Z.of_nat (List.length l)
     end.
   
   Fixpoint compute_offsets' (l : list (prod string entry)) (carry : Z) : list Z :=
@@ -145,42 +167,41 @@ Section WithParameters.
     end.
 
   Definition compute_offsets l := removelast (compute_offsets' l 0).
-
-
-  Fixpoint entry_ok (e : entry) : list Semantics.word -> Prop :=
+    
+  Fixpoint flatten (e : entry) : list (Semantics.word) :=
     match e with
-    | rec l => fun buf => exists data : list Semantics.word,
-                  buf = [/_ (Z.of_nat (List.length l))] ++
-                    List.map word.of_Z (compute_offsets l) ++
-                    List.map (fun p => stringToWord (fst p)) l ++ data /\
-                  List.fold_left (fun a b => (fun l => a l /\ (entry_ok (snd b)) l))
-                                 l (fun _ => True) data
-    | val (n, P) => P
+    | rec l => [/_ (Z.of_nat (List.length l))] ++
+              List.map word.of_Z (compute_offsets l) ++
+              List.map (fun p => stringToWord (fst p)) l ++
+              List.concat (List.map (fun p => flatten (snd p)) l)
+    | val l => l
     end.
-  
 
-  Definition repeat42 n := List.repeat (/_ (Ox"42")) n.
+  Definition repeat42 n : list Semantics.word := List.repeat (/_ (Ox"42")) n.
 
   Definition srep_entry : entry :=
-    rec [("RADI", val (1, eq [/_ (Ox"42")]));
-        ("MIDP", val (2, eq [/_ (Ox"42"); /_ (Ox"42")]));
-        ("RADI", val (16, eq (repeat42 16)))].
-
+    rec [("RADI", val [/_ (Ox"42")]);
+        ("MIDP", val [/_(Ox"42"); /_(Ox"42")]);
+        ("ROOT", val (repeat42 16))].
+  
   Definition dele_entry : entry :=
-    rec [("PUBK", val (8, eq (repeat42 8)));
-        ("MINT", val (2, eq [/_ (Ox"42"); /_ (Ox"42")]));
-        ("MAXT", val (2, eq [/_ (Ox"42"); /_ (Ox"42")]))].
+    rec [("PUBK", val (repeat42 8));
+        ("MINT", val [/_ (Ox"42"); /_ (Ox"42")]);
+        ("MAXT", val [/_ (Ox"42"); /_ (Ox"42")])].
 
   Definition cert_entry : entry :=
-    rec [("SIG", val (16, eq (repeat42 16)));
-        ("MAXT", val (size dele_entry, fun l => entry_ok dele_entry l))].
+    rec [("SIG", val (repeat42 16));
+        ("DELE", dele_entry)].
 
-  Definition message_entry (sig_ok : list Semantics.word -> Prop) : entry :=
-    rec [("SIG", val (16, sig_ok));
-        ("PATH", val (0, eq nil));
-        ("SREP", val (size srep_entry, fun l => entry_ok srep_entry l));
-        ("CERT", val (size cert_entry, fun l => entry_ok cert_entry l));
-        ("INDX", val (1, eq [/_ (Ox"42")]))].
+  Definition message_entry sig_entry : entry :=
+    rec [("SIG", sig_entry);
+        ("PATH", val nil);
+        ("SREP", srep_entry);
+        ("CERT", cert_entry);
+        ("INDX", val [/_ (Ox"42")])].
+
+  Definition message_ok (sig_ok : entry -> Prop) m :=
+    exists sig_entry, sig_ok sig_entry /\ m = message_entry sig_entry.
 
 
  Add Ring wring : (Properties.word.ring_theory (word := Semantics.word))
@@ -219,6 +240,11 @@ Section WithParameters.
        let r := isZcst a in
        lazymatch r with | true =>
          let x := eval cbv in (Z.to_nat (a/4)) in change (Z.to_nat (a/4)) with x
+       end
+     | H : context [Z.to_nat (?a / 4)] |- _ =>
+       let r := isZcst a in
+       lazymatch r with | true =>
+         let x := eval cbv in (Z.to_nat (a/4)) in change (Z.to_nat (a/4)) with x in H
        end
      end.
    
@@ -260,7 +286,7 @@ Section WithParameters.
    
    Ltac array_straightline := array_straightline_before; array_straightline_after.
 
-   Ltac simpl_list_length_exprs ::= repeat rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?List.length_nil, ?List.repeat_length, ?List.upds_length in *.
+   Ltac simpl_list_length_exprs ::= repeat rewrite ?List.length_skipn, ?List.firstn_length, ?List.app_length, ?List.length_cons, ?@List.length_nil, ?List.repeat_length, ?List.upds_length in *.
 
    Definition repeatLoop end_ :=
      let buffer := "buffer" in
@@ -268,22 +294,24 @@ Section WithParameters.
      bedrock_func_body:(while (i) { i = (i - coq:(4));
       store4(buffer + coq:((4 * end_)%Z) - i, coq:(Ox"42"))
     }).
-
-   Local Notation tupl := (fun a b =>{|
+   
+   Local Notation tupl := (fun a b c => {|
      PrimitivePair.pair._1 := a;
      PrimitivePair.pair._2 := {|
                            PrimitivePair.pair._1 := b;
-                           PrimitivePair.pair._2 := tt |} |} :  HList.tuple (Semantics.word) (2%nat)).
+                           PrimitivePair.pair._2 :=  {|
+                                                     PrimitivePair.pair._1 := c;
+                                                     PrimitivePair.pair._2 := tt |} |} |} :  HList.tuple (Semantics.word) (3%nat)).
    Lemma spec_of_repeatLoop :
-     forall functions end_ num_iter p_addr buf l vs R m t (post : _->_->_->Prop),
+     forall functions end_ num_iter p_addr sig_addr buf l vs R m t (post : _->_->_->Prop),
        ((array32 p_addr (buf.[[0 |==> vs]])) * R) m ->
-       enforce ["i";"buffer"] (tupl (/_ (4 * num_iter)%Z) p_addr) l ->
+       enforce ["i";"buffer";"sig"] (tupl (/_ (4 * num_iter)%Z) p_addr sig_addr) l ->
        0 <= num_iter -> (0 <= end_ < 2 ^ (width - 2)) -> (num_iter <= end_ < Z.of_nat (List.length buf)) -> (end_ = num_iter + Z.of_nat (List.length vs) - 1) ->
-       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"] (tupl (/_ 0) p_addr))) ->
+       (forall m, ((array32 p_addr (buf.[[0 |==> vs ++ List.repeat (/_ (Ox"42")) (Z.to_nat num_iter)]])) * R) m -> post t m (reconstruct ["i"; "buffer"; "sig"] (tupl (/_ 0) p_addr sig_addr))) ->
          WeakestPrecondition.cmd (WeakestPrecondition.call functions) (repeatLoop end_) t m l post.
    Proof.
      intros.
-     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ HList.polymorphic_list.nil) ("i"::"buffer"::nil)%list%string (fun V R T M I BUFFER => PrimitivePair.pair.mk (exists i, V = 4 * num_iter - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) i]]) * R) M) (fun t m i buff => t = T /\ i = /_ 0 /\ buff = p_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) (Z.to_nat num_iter)]]) * R) m))) _ _ _ _ _ _ _);
+     refine ((TailRecursion.tailrec (HList.polymorphic_list.cons _ ( HList.polymorphic_list.nil)) ("i"::"buffer"::"sig"::nil)%list%string (fun V R T M I BUFFER SIG => PrimitivePair.pair.mk (exists i, V = 4 * num_iter - 4 * (Z.of_nat i) /\ V = word.unsigned I /\ BUFFER = p_addr /\ SIG = sig_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) i]]) * R) M) (fun t m i buff sig => t = T /\ i = /_ 0 /\ buff = p_addr /\ sig = sig_addr /\ (array32 p_addr (buf.[[0 |==> vs ++ List.repeat (word.of_Z (Ox"42")) (Z.to_nat num_iter)]]) * R) m))) _ _ _ _ _ _ _);
        cbn [reconstruct map.putmany_of_list HList.tuple.to_list
              HList.hlist.foralls HList.tuple.foralls
              HList.hlist.existss HList.tuple.existss
@@ -296,7 +324,7 @@ Section WithParameters.
      { exact H0. }
        { eapply (Z.lt_wf 0). }
        { exists 0%nat.
-         split; [auto| split; [ZnWords| split; [auto|] ] ] .
+         split; [auto| split; [ZnWords| split; [auto| split; [auto|] ] ] ] .
          upds_simpl.
          cbn [List.repeat].
          rewrite app_nil_r.
@@ -308,22 +336,22 @@ Section WithParameters.
            split; [ZnWords| split; [ZnWords|] ].
            repeat straightline.
            eexists; eexists; split.
-           { exists (S x2)%nat.
-             split; [auto| split; [ZnWords|split; [auto|] ] ].
+           { exists (S x3)%nat.
+             split; [auto| split; [ZnWords|split; [auto|split; [auto|] ] ] ].
              upds_simpl.
              cbn[List.repeat].
              rewrite List.repeat_cons, List.app_assoc.
              ecancel_assumption. }
            split; [ZnWords|auto]. }
 
-         { split; try split; try split; auto.
+         { split; try split; try split; try split; auto.
            { ZnWords. }
-           replace x2 with (Z.to_nat num_iter) in H9 by blia.
+           replace x3 with (Z.to_nat num_iter) in H10 by blia.
            ecancel_assumption. } }
        repeat straightline.
      auto.
    Qed.
-
+    
 
    Ltac repeat_loop_tac :=
      match goal with
@@ -346,15 +374,15 @@ Section WithParameters.
      end.
    
    Instance spec_of_createTimestampMessage : spec_of "createTimestampMessage" :=
-     fun functions => forall buf sig buf_data (sig_ok : _->Prop) sig_data R m t,
-         (array32 buf buf_data * array32 sig sig_data * R) m ->
-         sig_ok sig_data ->
+     fun functions => forall buf_addr sig_addr buf_data sig_data R m t,
+         (array32 buf_addr buf_data * array32 sig_addr sig_data * R) m ->
          List.length buf_data = Z.to_nat 90 ->
          List.length sig_data = Z.to_nat 16 ->
-         WeakestPrecondition.call functions "createTimestampMessage" t m [buf; sig]
+         WeakestPrecondition.call functions "createTimestampMessage" t m [buf_addr; sig_addr]
          (fun t' m' rets => t = t' /\ rets = nil /\
-           exists buf_data', (array32 buf buf_data' * R) m' /\ entry_ok (message_entry sig_ok) buf_data').
-
+           (array32 buf_addr (flatten (message_entry (val sig_data))) * array32 sig_addr sig_data * R) m').
+   
+   
    Ltac array_straightline_before ::=
      match goal with
      | x:?p ?m
@@ -416,25 +444,77 @@ Section WithParameters.
        split; [ZnWords|].
        rewrite List.upd_S_skipn; auto. }
    Qed.  
+
+   Ltac simpl_div4 :=
+       match goal with
+       | H : context [ (\_ ?e / 4)] |- _ =>
+         progress (ring_simplify e in H; word_Z_unsigned; Z_to_nat_div)
+       end.
+
+     
+     Ltac memcpy_call :=
+       straightline_call; [split; [| ecancel_assumption];
+         match goal with
+         | |- \_ (?a ^- ?b) mod _ = 0 /\ ?P =>
+           match a with
+           | context[b] => ring_simplify (a ^- b)
+           end;
+             match P with
+             | \_ (?c ^- ?d) mod _ = 0 /\ _ =>
+               ring_simplify (c ^- d)
+             end
+         end;
+       repeat word_Z_unsigned;
+       repeat split; ZnWords| repeat straightline; clear_unused; word_Z_unsigned; repeat simpl_div4; upds_simpl].
    
    Lemma createTimestampMessage_ok : program_logic_goal_for_function! createTimestampMessage.
    Proof.
      repeat straightline.
-
-     
      repeat array_straightline.
      (* Write ltac to return address given an address expression *)
      cbn[List.app] in H0.
-     
-     
-     try (straightline_call; [..|ecancel_assumption|]; [match goal with
-        | |- ?a = ?b ^+ ?c =>
-          match a with
-          | context[b] => idtac a b
-          end
-        end |..]).
-     
+     memcpy_call.
+     clear_unused.
+     rewrite List.skipn_O in H5.
+     subst_words.
 
+     repeat array_straightline.
+     repeat_loop_tac.
+     repeat array_straightline.
+     repeat_loop_tac.
+     repeat array_straightline.
+     repeat_loop_tac.
+     repeat array_straightline.
+     
+     split; auto; split; auto.
+
+     rewrite List.upds_replace in H0 by ZnWords.
+     cbn[List.app] in H0.
+
+     use_sep_assumption.
+     cancel.
+     cancel_seps_at_indices 0%nat 0%nat.
+     { f_equal.
+       cbn.
+       simpl in H2.
+       rewrite H2.
+       simpl (Z.of_nat _).
+       rewrite List.firstn_all2 by blia.
+       simpl repeat.
+       rewrite <-?List.app_assoc.
+       reflexivity. }
+     reflexivity.
+   Qed.
+   
+
+     
+     
+     cbn-[Array.array Z.of_nat List.repeat].
+     
+     replace (Datatypes.length sig_data) with 16%nat.
+     rewrite H3.
+     ecancel_assumption.
+     
      Ltac ecancel_step :=
       let RHS := lazymatch goal with |- Lift1Prop.iff1 _ (seps ?RHS) => RHS end in
       let jy := index_and_element_of RHS in (* <-- multi-success! *)

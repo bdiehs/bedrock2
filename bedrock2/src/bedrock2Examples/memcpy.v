@@ -91,18 +91,32 @@ Section WithParameters.
         WeakestPrecondition.call functions "memcpy" t m [dst; src; num]
         (fun t' m' rets => t = t' /\ rets = nil /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[off2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn off1 buf1)]]) * R) m').
  *)
- 
+ (*
+  Global Instance spec_of_memcpy : spec_of "memcpy" :=
+    fnspec! "memcpy" dst src num / dst_ptr src_ptr buf1 buf2 R,
+    let off1 := \_ (src ^- src_ptr) in
+    let off2 := \_ (dst ^- dst_ptr) in
+    let n1 := Z.to_nat (off1 / 4) in
+    let n2 := Z.to_nat (off2 / 4) in
+    { requires t m := off1 mod 4 = 0 /\ off2 mod 4 = 0 /\
+                      off1 + 4 * (\_ num) < 2^width /\
+                      off2 + 4 * (\_ num) < 2^width /\
+                      Z.of_nat n1 + \_ num <= Z.of_nat (List.length buf1) /\
+                      Z.of_nat n2 + \_ num <= Z.of_nat (List.length buf2) /\
+                      (array32 src_ptr buf1 * array32 dst_ptr buf2 * R) m;
+      ensures t' m' := t = t' /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[n2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn n1 buf1)]]) * R) m' }.
+ *)
   Global Instance spec_of_memcpy : spec_of "memcpy" :=
     fun functions => forall src_ptr dst_ptr src dst buf1 buf2 num R m t,
         let off1 := \_ (src ^- src_ptr) in
         let off2 := \_ (dst ^- dst_ptr) in
-        off1 mod 4 = 0 /\ off2 mod 4 = 0 ->
         let n1 := Z.to_nat (off1 / 4) in
         let n2 := Z.to_nat (off2 / 4) in
-        off1 + 4 * (\_ num) < 2^width ->
-        off2 + 4 * (\_ num) < 2^width ->
-        Z.of_nat n1 + \_ num <= Z.of_nat (List.length buf1) ->
-        Z.of_nat n2 + \_ num <= Z.of_nat (List.length buf2) ->
+        (off1 mod 4 = 0 /\ off2 mod 4 = 0 /\
+         off1 + 4 * (\_ num) < 2^width /\
+         off2 + 4 * (\_ num) < 2^width /\
+         Z.of_nat n1 + \_ num <= Z.of_nat (List.length buf1) /\
+         Z.of_nat n2 + \_ num <= Z.of_nat (List.length buf2)) /\
         (array32 src_ptr buf1 * array32 dst_ptr buf2 * R) m ->
         WeakestPrecondition.call functions "memcpy" t m [dst; src; num]
         (fun t' m' rets => t = t' /\ rets = nil /\ (array32 src_ptr buf1 * array32 dst_ptr (buf2.[[n2 |==> List.firstn (Z.to_nat (\_ num)) (List.skipn n1 buf1)]]) * R) m').
@@ -145,9 +159,7 @@ Section WithParameters.
         { repeat straightline.
           eexists; split; [|reflexivity].
           eapply (array_load_four_of_sep_32bit' src_ptr);
-            [ reflexivity | ecancel_assumption| ZnWords| ZnWords| ].
-          word_Z_unsigned.
-          ZnWords. }
+            [reflexivity|ecancel_assumption|..]; word_Z_unsigned; ZnWords. }
         eapply (array_store_four_of_sep_32bit' dst_ptr);
           [reflexivity| ecancel_assumption | ZnWords|].
         replace ( \_ (/_ 4)) with 4 by ZnWords.
