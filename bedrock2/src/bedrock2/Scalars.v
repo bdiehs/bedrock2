@@ -272,293 +272,96 @@ Section Scalars.
     load access_size.four m a = Some (word.of_Z (LittleEndian.combine _ (HList.tuple.of_list bs))).
   Proof. eapply load_four_bytes_of_sep_at; try eapply H; blia. Qed.
 
+  (*
+  Lemma store_four_of_sep addr (oldvalue : word32) (value : word) R m (post:_->Prop)
+    (Hsep : sep (scalar32 addr oldvalue) R m)
+    (Hpost : forall m, sep (scalar32 addr (word.of_Z (word.unsigned value))) R m -> post m)
+    : exists m1, Memory.store Syntax.access_size.four m addr value = Some m1 /\ post m1.
+  Proof.
+  *)
+
   Add Ring wring : Properties.word.ring_theory.
 
-  Lemma array_store_four_of_sep (addr addr' : word) n (oldvalues : list word) (value : word) size R m (post:_->Prop) (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n))))
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
+  Lemma array_store_of_sep (addr addr' : word) n (oldvalues : list word) (value : word) size sz R m (post:_->Prop)
+    (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n))))
+    (Hsep : sep (array (truncated_word sz) size addr oldvalues) R m)
     (_ : (n < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (upd oldvalues n (truncate_word access_size.four value))) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
+    (Hpost : forall m, sep (array (truncated_word sz) size addr (upd oldvalues n value)) R m -> post m)
+    : exists m1, Memory.store sz m addr' value = Some m1 /\ post m1.
   Proof.
     rewrite <-(firstn_nth_skipn _ _ oldvalues (word.of_Z 0) H0) in Hsep.
-    do 2 seprewrite_in (array_append scalar32 size) Hsep.
-    seprewrite_in (array_cons scalar32 size) Hsep.
-    seprewrite_in (array_nil scalar32 size) Hsep.
+    do 2 seprewrite_in (array_append (truncated_word sz) size) Hsep.
+    seprewrite_in (array_cons (truncated_word sz) size) Hsep.
+    seprewrite_in (array_nil (truncated_word sz) size) Hsep.
     rewrite firstn_length, min_l, <- H in Hsep by blia.
-    eapply store_four_of_sep; [ecancel_assumption|].
+    eapply store_bytes_of_sep.
+    { unfold truncated_word, truncated_scalar, littleendian in Hsep.
+      ecancel_assumption. }
     intros.
     apply Hpost.
     unfold upd, upds.
     rewrite (firstn_all2 (n := length oldvalues - n)) by (simpl; blia).
-    do 2 seprewrite (array_append scalar32 size).
-    seprewrite (array_cons scalar32 size).
-    seprewrite (array_nil scalar32 size).
+    do 2 seprewrite (array_append (truncated_word sz) size).
+    seprewrite (array_cons (truncated_word sz) size).
+    seprewrite (array_nil (truncated_word sz) size).
     rewrite firstn_length, min_l, <- H by blia.
     cbn[length Nat.add] in *.
+    unfold truncated_word, truncated_scalar, littleendian.
     ecancel_assumption.
   Qed.
 
-  Lemma array_store_four_of_sep_32bit (addr addr' : word) n (oldvalues : list word) (value : word) size R m (post:_->Prop) (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n))))
-    (W32: width = 32)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : (n < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (upd oldvalues n value)) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-  Proof.
-    eapply array_store_four_of_sep; eauto.
-    rewrite truncate_word_nop_32bit; assumption.
-  Qed.
-
-  Lemma array_store_four_of_sep'(addr addr' : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
+  Lemma array_store_of_sep' (addr addr' : word) (oldvalues : list word) (value : word) size sz R m (post:_->Prop)
+    (Hsep : sep (array (truncated_word sz) size addr oldvalues) R m)
     (_ : 0 < word.unsigned size)
     (_ : let offset := word.unsigned (word.sub addr' addr) in
          (Z.modulo offset (word.unsigned size) = 0) /\
          (let n := Z.to_nat (offset / word.unsigned size) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 size addr (upd oldvalues n (truncate_word access_size.four value))) R m -> post m)))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
+    (forall m, sep (array (truncated_word sz) size addr (upd oldvalues n value)) R m -> post m)))
+    : exists m1, Memory.store sz m addr' value = Some m1 /\ post m1.
   Proof.
-    destruct H0; destruct H1.
-    eapply array_store_four_of_sep; eauto.
+    destruct H0.
+    destruct H1.
+    eapply array_store_of_sep; eauto.
     rewrite Z2Nat.id by (apply Z.div_pos; [apply word.unsigned_range | blia]).
     rewrite <- Z_div_exact_2; [| blia| auto].
     rewrite word.of_Z_unsigned.
     ring.
   Qed.
 
-  Lemma array_store_four_of_sep_32bit'(addr addr' : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (W32 : width = 32) 
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : 0 < word.unsigned size)
-    (_ : let offset := word.unsigned (word.sub addr' addr) in
-         (Z.modulo offset (word.unsigned size) = 0) /\
-         (let n := Z.to_nat (offset / word.unsigned size) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 size addr (upd oldvalues n value)) R m -> post m)))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-   Proof.
-     eapply array_store_four_of_sep'; eauto.
-     rewrite truncate_word_nop_32bit; assumption.
-   Qed.
-
-  Lemma array_load_four_of_sep addr addr' n (values : list word) size R m
-    (Hsep : (sep (array scalar32 size addr values) R m))
+  Lemma array_load_of_sep addr addr' n (values : list word) size sz R m
+    (Hsep : (sep (array (truncated_word sz) size addr values) R m))
     (_ : addr' = (word.add addr (word.of_Z (word.unsigned size * Z.of_nat n))))
     (_ : (n < length values)%nat) :
-    Memory.load Syntax.access_size.four m addr' =
-    Some (truncate_word Syntax.access_size.four (nth n values (word.of_Z 0))).
+    Memory.load sz m addr' =
+    Some (truncate_word sz (nth n values (word.of_Z 0))).
   Proof.
     rewrite <-(firstn_nth_skipn _ _ values (word.of_Z 0) H0) in Hsep.
-    do 2 seprewrite_in (array_append scalar32 size) Hsep.
-    seprewrite_in (array_cons scalar32 size) Hsep.
-    seprewrite_in (array_nil scalar32 size) Hsep.
+    do 2 seprewrite_in (array_append (truncated_word sz) size) Hsep.
+    seprewrite_in (array_cons (truncated_word sz) size) Hsep.
+    seprewrite_in (array_nil (truncated_word sz) size) Hsep.
     rewrite firstn_length, min_l, <-H in Hsep by blia.
-    erewrite <-load_four_of_sep; [|ecancel_assumption].
-    reflexivity.
+    eapply load_of_sep.
+    ecancel_assumption.
   Qed.
 
-  Lemma array_load_four_of_sep_32bit addr addr' n (values : list word) size R m
-    (W32: width = 32)
-    (Hsep : (sep (array scalar32 size addr values) R m))
-    (_ : addr' = (word.add addr (word.of_Z (word.unsigned size * Z.of_nat n))))
-    (_ : (n < length values)%nat) :
-    Memory.load Syntax.access_size.four m addr' = Some (nth n values (word.of_Z 0)).
-  Proof.
-    erewrite array_load_four_of_sep; eauto.
-    rewrite truncate_word_nop_32bit; auto.
-  Qed.
-
-  Lemma array_load_four_of_sep' (addr addr': word) (values : list word) size R m
-    (Hsep : sep (array scalar32 size addr values) R m)
+  Lemma array_load_of_sep' (addr addr': word) (values : list word) size sz R m
+    (Hsep : sep (array (truncated_word sz) size addr values) R m)
     (_ : 0 < word.unsigned size)
     : let offset := word.unsigned (word.sub addr' addr) in
       (Z.modulo offset (word.unsigned size) = 0) ->
       (let n := Z.to_nat (offset / word.unsigned size) in (n < List.length values)%nat ->
-      Memory.load Syntax.access_size.four m addr' =
-      Some (truncate_word Syntax.access_size.four (nth n values (word.of_Z 0)))).
+      Memory.load sz m addr' =
+      Some (truncate_word sz (nth n values (word.of_Z 0)))).
   Proof.
     intros.
-    erewrite array_load_four_of_sep; eauto.
+    eapply array_load_of_sep; eauto.
     subst offset n.
     rewrite Z2Nat.id by (apply Z.div_pos; [apply word.unsigned_range | blia]).
     rewrite <- Z_div_exact_2; [| blia| auto].
     rewrite word.of_Z_unsigned.
     ring.
   Qed.
-  (*
-  Lemma array_load_four_of_sep'' (addr addr': word) (values : list word) size R m
-    (Hsep : sep (array scalar32 size addr values) R m)
-    (_ : 0 < word.unsigned size)
-    (_ : word.unsigned (word.sub addr' addr) mod (word.unsigned size) = 0)
-    (_ : word.unsigned (word.sub addr' addr) < word.unsigned size * Z.of_nat (List.length values)) :
-    let n := Z.to_nat (word.unsigned (word.sub addr' addr) / word.unsigned size) in
-    Memory.load Syntax.access_size.four m addr' =
-    Some (truncate_word Syntax.access_size.four (nth n values (word.of_Z 0))).
-    *)
-
-  Lemma array_load_four_of_sep_32bit' (addr addr': word) (values : list word) size R m
-    (W32: width = 32)
-    (Hsep : sep (array scalar32 size addr values) R m)
-    (_ : 0 < word.unsigned size)
-    : let offset := word.unsigned (word.sub addr' addr) in
-      (Z.modulo offset (word.unsigned size) = 0) ->
-      (let n := Z.to_nat (offset / word.unsigned size) in (n < List.length values)%nat ->
-      Memory.load Syntax.access_size.four m addr' =
-      Some (nth n values (word.of_Z 0))).
-  Proof.
-    intros.
-    erewrite array_load_four_of_sep'; eauto.
-    rewrite truncate_word_nop_32bit; auto.
-  Qed.
   
-  (*
-Lemma array_store_four_of_sep'(addr addr' : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : 0 < word.unsigned size)
-    (_ : let offset := word.unsigned (word.sub addr' addr) in
-         (Z.modulo offset (word.unsigned size) = 0) /\
-         (let n := Z.to_nat (offset / word.unsigned size) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 size addr (upd oldvalues n (truncate_word access_size.four value))) R m -> post m)))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-
-
-  Lemma array_store_four_of_sep (addr addr' : word) n (oldvalues : list word) (value : word) size R m (post:_->Prop) (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n))))
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : (n < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (listUpdate oldvalues n (truncate_word access_size.four value))) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-  Proof.
-    assert (oldvalues = firstn n oldvalues ++ ((nth n oldvalues (word.of_Z 0))::nil) ++ skipn (S n) oldvalues).
-    { rewrite <-Nat.add_1_l, <-skipn_skipn, <-firstn_skipn_nth, firstn_skipn, firstn_skipn; auto. }
-    rewrite H1 in Hsep.
-    do 2 seprewrite_in (array_append scalar32 size) Hsep.
-    seprewrite_in (array_cons scalar32 size) Hsep.
-    seprewrite_in (array_nil scalar32 size) Hsep.
-    rewrite firstn_length, min_l, <- H in Hsep by blia.
-    eapply store_four_of_sep; [ecancel_assumption|].
-    intros.
-    apply Hpost.
-    cbv[listUpdate].
-    do 2 seprewrite (array_append scalar32 size).
-    seprewrite (array_cons scalar32 size).
-    seprewrite (array_nil scalar32 size).
-    rewrite firstn_length, min_l, <- H by blia.
-    cbn[length] in *.
-    ecancel_assumption.
-  Qed.
-   *)
-  (*
-  Lemma array_store_four_of_sep_32bit(W32: width = 32) (addr addr' : word) n (oldvalues : list word) (value : word) size R m (post:_->Prop) (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n))))
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : (n < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (upd oldvalues n value)) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-  Proof.
-    eapply array_store_four_of_sep; eauto.
-    rewrite truncate_word_nop_32bit; assumption.
-  Qed.
-
-  
-  Lemma array_store_four_of_sep' (W32 : 32 <= width)(addr addr' : word) (oldvalues : list word) (value : word) R m (post:_->Prop)
-    (Hsep : sep (array scalar32 (word.of_Z 4) addr oldvalues) R m)
-    (_ : let offset := word.unsigned (word.sub addr' addr) in
-         (Z.modulo offset 4 = 0) /\
-         (let n := Z.to_nat (offset / 4) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 (word.of_Z 4) addr (upd oldvalues n (truncate_word access_size.four value))) R m -> post m)))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-  Proof.
-    destruct H; destruct H0.
-    eapply array_store_four_of_sep; eauto.
-    rewrite Z2Nat.id by (apply Z.div_pos; [apply word.unsigned_range | blia]).
-    rewrite word.unsigned_of_Z.
-    replace (word.wrap 4) with 4%Z.
-    2: { unfold word.wrap; rewrite Z.mod_small; auto.
-         pose proof (Z.pow_le_mono_r 2 _ _ (ltac: (blia)) W32).
-         blia. }
-    rewrite <- Z_div_exact_2; [| blia| auto].
-    rewrite word.unsigned_sub, <-word.unsigned_of_Z, word.of_Z_unsigned, word.ring_morph_sub.
-    do 2 rewrite word.of_Z_unsigned.
-    rewrite (Rsub_def word.ring_theory), (Radd_comm word.ring_theory), <-(Radd_assoc word.ring_theory), (Radd_comm word.ring_theory _ addr), (Ropp_def word.ring_theory), (Radd_comm word.ring_theory), (Radd_0_l word.ring_theory).
-    reflexivity.
-  Qed.
-
-   Lemma array_store_four_of_sep32bit'(W32 : width = 32) (addr addr' : word) (oldvalues : list word) (value : word) R m (post:_->Prop)
-    (Hsep : sep (array scalar32 (word.of_Z 4) addr oldvalues) R m)
-    (_ : let offset := word.unsigned (word.sub addr' addr) in
-         (Z.modulo offset 4 = 0) /\
-         (let n := Z.to_nat (offset / 4) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 (word.of_Z 4) addr (upd oldvalues n value)) R m -> post m)))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-   Proof.
-     clear width_lower_bound.
-     eapply (array_store_four_of_sep' (Z.eq_le_incl _ _ (eq_sym W32))); eauto.
-     rewrite truncate_word_nop_32bit; auto.
-   Qed.
-  
-  Lemma array_store_four_of_sep' (addr addr' : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : let n := Z.to_nat (word.unsigned (word.divu (word.sub addr' addr) size)) in (n < List.length oldvalues)%nat /\
-    (forall m, sep (array scalar32 size addr (listUpdate oldvalues n (truncate_word access_size.four value))) R m -> post m))
-    : exists m1, Memory.store Syntax.access_size.four m addr' value = Some m1 /\ post m1.
-  Proof.
-    destruct H.
-    eapply array_store_four_of_sep; eauto.
-    rewrite Z2Nat.id by exact (proj1 (word.unsigned_range _)).
-  Abort.
-
-  Lemma array_first_store_four_of_sep (addr addr' : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : (0 < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (((truncate_word access_size.four value)::nil) ++ skipn 1 oldvalues)) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr value = Some m1 /\ post m1.
-  Proof.
-    eapply array_store_four_of_sep; [ | ecancel_assumption| eassumption |].
-    { cbn[Z.of_nat].
-      rewrite Z.mul_0_r, (Radd_comm word.ring_theory), (Radd_0_l word.ring_theory).
-      reflexivity. }
-    rewrite upd_firstn_skipn, firstn_O, app_nil_l by auto.
-    exact Hpost.
-  Qed.
-
-  Lemma array_first_store_four_of_sep_32bit (W32 : width = 32) (addr : word) (oldvalues : list word) (value : word) size R m (post:_->Prop)
-    (Hsep : sep (array scalar32 size addr oldvalues) R m)
-    (_ : (0 < length oldvalues)%nat)
-    (Hpost : forall m, sep (array scalar32 size addr (value::skipn 1 oldvalues)) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr value = Some m1 /\ post m1.
-  Proof.
-    eapply (array_first_store_four_of_sep addr); eauto.
-    rewrite truncate_word_nop_32bit; auto.
-  Qed.
-  
-
-  Lemma store_array_of_sep' (addr addr' : word) n (oldvalues : list word) (value : word) size R m (post:_->Prop) (_ : addr' = word.add addr (word.of_Z ((word.unsigned size) * (Z.of_nat n)))) (_ : (n < length oldvalues)%nat)
-    (Hsep : sep (array scalar32 size (word.sub addr (word.of_Z ((word.unsigned size) * (Z.of_nat n)))) oldvalues) R m)
-    (Hpost : forall m, sep (array scalar32 size (word.sub addr (word.of_Z ((word.unsigned size) * (Z.of_nat n)))) (firstn n oldvalues ++ ((truncate_word access_size.four value)::nil) ++ skipn (1 + n) oldvalues)) R m -> post m)
-    : exists m1, Memory.store Syntax.access_size.four m addr value = Some m1 /\ post m1.
-  Proof.
-    assert (oldvalues = firstn n oldvalues ++ ((nth n oldvalues (word.of_Z 0))::nil) ++ skipn (1 + n) oldvalues).
-    { rewrite <-skipn_skipn, <-firstn_skipn_nth, firstn_skipn, firstn_skipn; auto. }
-    rewrite H1 in Hsep.
-    do 2 seprewrite_in (array_append scalar32 size) Hsep.
-    seprewrite_in (array_cons scalar32 size) Hsep.
-    seprewrite_in (array_nil scalar32 size) Hsep.
-    
-    rewrite word.word_sub_add_l_same_r in Hsep.
-    
-    ring_simplify (word.add (word.sub addr (word.of_Z (word.unsigned size * Z.of_nat n)))
-                (word.of_Z
-                   (word.unsigned size * Z.of_nat (length (firstn n oldvalues))))).
-    rewrite firstn_length, min_l, <- H in Hsep by blia.
-    eapply store_four_of_sep; [ecancel_assumption|].
-    intros.
-    apply Hpost.
-    do 2 seprewrite (array_append scalar32 size).
-    seprewrite (array_cons scalar32 size).
-    seprewrite (array_nil scalar32 size).
-    rewrite firstn_length, min_l, <- H by blia.
-    cbn[length] in *.
-    ecancel_assumption.
-  Qed.
-  *)
 End Scalars.
 
 Notation scalar8 := ptsto (only parsing).
