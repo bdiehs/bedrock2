@@ -25,7 +25,7 @@ Proof.
   apply Z.ltb_lt in H2.
   auto.
 Qed.
-y
+
 Lemma computable_le{lo v: Z}(H: Z.leb lo v = true): lo <= v.
 Proof. apply Z.leb_le. assumption. Qed.
 
